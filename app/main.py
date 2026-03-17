@@ -6,7 +6,7 @@ import mimetypes
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -57,13 +57,19 @@ class GlossaryCreateRequest(BaseModel):
 
 class DraftRefreshRequest(BaseModel):
     corrected_transcript: str = Field(default="", max_length=5000)
+    translation_context: str = Field(default="", max_length=2000)
 
 
 class ApprovalRequest(BaseModel):
     corrected_transcript: str = Field(min_length=1, max_length=5000)
     final_translation: str = Field(min_length=1, max_length=5000)
+    translation_context: str = Field(default="", max_length=2000)
     translation_notes: str = Field(default="", max_length=800)
     topic_tags: str = Field(default="", max_length=300)
+
+
+class SampleRecordingRequest(BaseModel):
+    translation_context: str = Field(default="", max_length=2000)
 
 
 def serialize_recording(recording: dict | None) -> dict | None:
@@ -91,7 +97,12 @@ def validate_audio_payload(filename: str, mime_type: str, size_bytes: int) -> st
     return guessed_extension
 
 
-def create_uploaded_recording(filename: str, mime_type: str, file_bytes: bytes) -> dict:
+def create_uploaded_recording(
+    filename: str,
+    mime_type: str,
+    file_bytes: bytes,
+    translation_context: str = "",
+) -> dict:
     extension = validate_audio_payload(filename, mime_type, len(file_bytes))
     recording_id = str(uuid4())
     stored_path = settings.uploads_dir / f"{recording_id}{extension}"
@@ -105,6 +116,7 @@ def create_uploaded_recording(filename: str, mime_type: str, file_bytes: bytes) 
             "audio_path": str(stored_path),
             "mime_type": mime_type or "audio/mpeg",
             "status": "needs_review",
+            "translation_context": translation_context.strip(),
             "processing_stage": "uploaded",
             "processing_message": "Audio uploaded. Ready to transcribe.",
         }
@@ -164,22 +176,35 @@ async def recording_audio(recording_id: str):
 
 
 @app.post("/api/recordings")
-async def create_recording_endpoint(file: UploadFile = File(...)):
+async def create_recording_endpoint(
+    file: UploadFile = File(...),
+    translation_context: str = Form(default=""),
+):
     file_bytes = await file.read()
     validate_upload(file, len(file_bytes))
-    recording = create_uploaded_recording(file.filename or "", file.content_type or "audio/mpeg", file_bytes)
+    recording = create_uploaded_recording(
+        file.filename or "",
+        file.content_type or "audio/mpeg",
+        file_bytes,
+        translation_context=translation_context,
+    )
     return {"recording": serialize_recording(recording)}
 
 
 @app.post("/api/recordings/from-sample")
-async def create_recording_from_sample():
+async def create_recording_from_sample(request: SampleRecordingRequest | None = None):
     sample_path = settings.sample_audio_file
     if not sample_path or not sample_path.exists() or not sample_path.is_file():
         raise HTTPException(status_code=404, detail="Sample audio file is not available on this computer.")
 
     mime_type = mimetypes.guess_type(sample_path.name)[0] or "audio/mpeg"
     file_bytes = sample_path.read_bytes()
-    recording = create_uploaded_recording(sample_path.name, mime_type, file_bytes)
+    recording = create_uploaded_recording(
+        sample_path.name,
+        mime_type,
+        file_bytes,
+        translation_context=request.translation_context if request else "",
+    )
     return {"recording": serialize_recording(recording)}
 
 
@@ -228,11 +253,12 @@ async def draft_translation(recording_id: str):
         raise HTTPException(status_code=404, detail="Recording not found.")
 
     transcript_source = (recording.get("corrected_transcript") or recording.get("raw_transcript") or "").strip()
+    translation_context = (recording.get("translation_context") or "").strip()
     update_recording(
         recording_id,
         {
             "processing_stage": "translating",
-            "processing_message": f"Drafting English translation with {settings.translation_model}...",
+            "processing_message": f"Drafting English ideas with {settings.translation_model}...",
         },
     )
 
@@ -240,10 +266,10 @@ async def draft_translation(recording_id: str):
     approved_examples = list_approved_memories(limit=40)
     glossary_hits = find_glossary_hits(transcript_source, glossary_entries)
     example_hits = find_memory_hits(transcript_source, approved_examples)
-    draft = build_translation_draft(transcript_source, glossary_hits, example_hits)
+    draft = build_translation_draft(transcript_source, glossary_hits, example_hits, translation_context)
 
     processing_message = (
-        "Draft translation ready for review."
+        "Translation ideas ready for review."
         if transcript_source
         else "Processing finished, but the transcript still needs to be entered or corrected manually."
     )
@@ -255,6 +281,7 @@ async def draft_translation(recording_id: str):
             "draft_translation": draft["draft_translation"],
             "confidence": draft["confidence"],
             "draft_explanation": draft["draft_explanation"],
+            "translation_context": translation_context,
             "glossary_hits": glossary_hits,
             "example_hits": example_hits,
             "processing_stage": "done",
@@ -274,7 +301,12 @@ async def refresh_draft(recording_id: str, request: DraftRefreshRequest):
     approved_examples = list_approved_memories(limit=40)
     glossary_hits = find_glossary_hits(request.corrected_transcript, glossary_entries)
     example_hits = find_memory_hits(request.corrected_transcript, approved_examples)
-    draft = build_translation_draft(request.corrected_transcript, glossary_hits, example_hits)
+    draft = build_translation_draft(
+        request.corrected_transcript,
+        glossary_hits,
+        example_hits,
+        request.translation_context,
+    )
     updated = update_recording(
         recording_id,
         {
@@ -282,10 +314,11 @@ async def refresh_draft(recording_id: str, request: DraftRefreshRequest):
             "draft_translation": draft["draft_translation"],
             "confidence": draft["confidence"],
             "draft_explanation": draft["draft_explanation"],
+            "translation_context": request.translation_context.strip(),
             "glossary_hits": glossary_hits,
             "example_hits": example_hits,
             "processing_stage": "done",
-            "processing_message": "Draft translation ready for review.",
+            "processing_message": "Translation ideas ready for review.",
         },
     )
     return {"recording": serialize_recording(updated)}
@@ -302,6 +335,7 @@ async def approve_recording(recording_id: str, request: ApprovalRequest):
         {
             "corrected_transcript": request.corrected_transcript.strip(),
             "final_translation": request.final_translation.strip(),
+            "translation_context": request.translation_context.strip(),
             "translation_notes": request.translation_notes.strip(),
             "topic_tags": request.topic_tags.strip(),
             "status": "approved",

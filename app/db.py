@@ -49,6 +49,7 @@ def init_db() -> None:
                 corrected_transcript TEXT NOT NULL DEFAULT '',
                 draft_translation TEXT NOT NULL DEFAULT '',
                 final_translation TEXT NOT NULL DEFAULT '',
+                translation_context TEXT NOT NULL DEFAULT '',
                 translation_notes TEXT NOT NULL DEFAULT '',
                 topic_tags TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'needs_review',
@@ -74,6 +75,7 @@ def init_db() -> None:
             {
                 "processing_stage": "TEXT NOT NULL DEFAULT 'idle'",
                 "processing_message": "TEXT NOT NULL DEFAULT ''",
+                "translation_context": "TEXT NOT NULL DEFAULT ''",
             },
         )
 
@@ -150,6 +152,7 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 corrected_transcript,
                 draft_translation,
                 final_translation,
+                translation_context,
                 translation_notes,
                 topic_tags,
                 status,
@@ -165,7 +168,7 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 updated_at,
                 approved_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["id"],
@@ -176,6 +179,7 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 payload.get("corrected_transcript", ""),
                 payload.get("draft_translation", ""),
                 payload.get("final_translation", ""),
+                payload.get("translation_context", ""),
                 payload.get("translation_notes", ""),
                 payload.get("topic_tags", ""),
                 payload.get("status", "needs_review"),

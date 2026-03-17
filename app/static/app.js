@@ -11,6 +11,7 @@ const state = {
   meterAnimationFrame: null,
   timerInterval: null,
   recordingStartedAt: null,
+  waveformDrawToken: 0,
 };
 
 const elements = {
@@ -21,6 +22,7 @@ const elements = {
   captureMessage: document.getElementById("capture-message"),
   reviewPanel: document.getElementById("review-panel"),
   audioPlayer: document.getElementById("audio-player"),
+  translationContext: document.getElementById("translation-context"),
   rawTranscript: document.getElementById("raw-transcript"),
   correctedTranscript: document.getElementById("corrected-transcript"),
   translationText: document.getElementById("translation-text"),
@@ -47,6 +49,8 @@ const elements = {
   recordingTimer: document.getElementById("recording-timer"),
   meterLabel: document.getElementById("meter-label"),
   meterBars: Array.from(document.querySelectorAll("#mic-meter .meter-bar")),
+  waveformCanvas: document.getElementById("audio-waveform"),
+  waveformSource: document.getElementById("waveform-source"),
   processTitle: document.getElementById("process-title"),
   processPill: document.getElementById("process-pill"),
   processMessage: document.getElementById("process-message"),
@@ -94,13 +98,13 @@ const PROCESS_SNAPSHOTS = {
     title: "Translating",
     pill: "Translating",
     pillClass: "pill active",
-    message: "Drafting the English translation...",
+    message: "Drafting English ideas...",
   },
   done: {
     title: "Done",
     pill: "Done",
     pillClass: "pill success",
-    message: "Draft translation ready for review.",
+    message: "Translation ideas ready for review.",
   },
   approved: {
     title: "Approved",
@@ -118,6 +122,173 @@ const PROCESS_SNAPSHOTS = {
 
 function setMessage(element, message) {
   element.textContent = message;
+}
+
+function contextValue() {
+  return elements.translationContext.value.trim();
+}
+
+function getWaveformSurface() {
+  const canvas = elements.waveformCanvas;
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context) {
+    return null;
+  }
+  return { canvas, context };
+}
+
+function paintWaveformPlaceholder(label = "No audio selected yet.") {
+  const surface = getWaveformSurface();
+  if (!surface) {
+    return;
+  }
+
+  const { canvas, context } = surface;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, "rgba(12, 123, 109, 0.12)");
+  gradient.addColorStop(1, "rgba(183, 97, 47, 0.12)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.strokeStyle = "rgba(46, 31, 24, 0.08)";
+  context.lineWidth = 1;
+  for (let x = 0; x < canvas.width; x += 48) {
+    context.beginPath();
+    context.moveTo(x + 0.5, 18);
+    context.lineTo(x + 0.5, canvas.height - 18);
+    context.stroke();
+  }
+
+  context.fillStyle = "rgba(113, 92, 80, 0.9)";
+  context.font = "600 16px 'IBM Plex Sans', 'Segoe UI', sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, canvas.width / 2, canvas.height / 2);
+  elements.waveformSource.textContent = label;
+}
+
+function paintWaveform(channelData, label) {
+  const surface = getWaveformSurface();
+  if (!surface) {
+    return;
+  }
+
+  const { canvas, context } = surface;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  const background = context.createLinearGradient(0, 0, 0, canvas.height);
+  background.addColorStop(0, "rgba(12, 123, 109, 0.14)");
+  background.addColorStop(1, "rgba(183, 97, 47, 0.14)");
+  context.fillStyle = background;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const centerY = canvas.height / 2;
+  const innerHeight = canvas.height - 30;
+  const samplesPerPixel = Math.max(1, Math.floor(channelData.length / canvas.width));
+
+  context.strokeStyle = "rgba(12, 123, 109, 0.95)";
+  context.lineWidth = 2;
+  context.beginPath();
+  for (let x = 0; x < canvas.width; x += 1) {
+    const start = x * samplesPerPixel;
+    const end = Math.min(channelData.length, start + samplesPerPixel);
+    let min = 1;
+    let max = -1;
+    for (let index = start; index < end; index += 1) {
+      const value = channelData[index];
+      if (value < min) {
+        min = value;
+      }
+      if (value > max) {
+        max = value;
+      }
+    }
+    const top = centerY + min * (innerHeight / 2);
+    const bottom = centerY + max * (innerHeight / 2);
+    context.moveTo(x + 0.5, top);
+    context.lineTo(x + 0.5, bottom);
+  }
+  context.stroke();
+
+  context.strokeStyle = "rgba(46, 31, 24, 0.12)";
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(0, centerY + 0.5);
+  context.lineTo(canvas.width, centerY + 0.5);
+  context.stroke();
+
+  elements.waveformSource.textContent = label;
+}
+
+async function decodeWaveformSource(arrayBuffer) {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    throw new Error("Audio preview is not supported in this browser.");
+  }
+
+  const audioContext = new AudioContextCtor();
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    return audioBuffer.getChannelData(0);
+  } finally {
+    audioContext.close().catch(() => {});
+  }
+}
+
+async function drawWaveformFromBlob(blob, label) {
+  if (!blob) {
+    paintWaveformPlaceholder();
+    return;
+  }
+
+  const token = state.waveformDrawToken + 1;
+  state.waveformDrawToken = token;
+  const previewLabel = label || "Selected audio";
+  elements.waveformSource.textContent = `Loading preview for ${previewLabel}...`;
+
+  try {
+    const channelData = await decodeWaveformSource(await blob.arrayBuffer());
+    if (state.waveformDrawToken !== token) {
+      return;
+    }
+    paintWaveform(channelData, previewLabel);
+  } catch (error) {
+    if (state.waveformDrawToken !== token) {
+      return;
+    }
+    paintWaveformPlaceholder(`Preview unavailable for ${previewLabel}`);
+  }
+}
+
+async function drawWaveformFromUrl(url, label) {
+  if (!url) {
+    paintWaveformPlaceholder();
+    return;
+  }
+
+  const token = state.waveformDrawToken + 1;
+  state.waveformDrawToken = token;
+  const previewLabel = label || "Loaded audio";
+  elements.waveformSource.textContent = `Loading preview for ${previewLabel}...`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("Unable to load audio preview.");
+    }
+    const channelData = await decodeWaveformSource(await response.arrayBuffer());
+    if (state.waveformDrawToken !== token) {
+      return;
+    }
+    paintWaveform(channelData, previewLabel);
+  } catch (error) {
+    if (state.waveformDrawToken !== token) {
+      return;
+    }
+    paintWaveformPlaceholder(`Preview unavailable for ${previewLabel}`);
+  }
 }
 
 function formatDuration(milliseconds) {
@@ -417,6 +588,7 @@ function renderRecording(recording) {
   state.currentRecording = recording;
   elements.reviewPanel.hidden = false;
   elements.audioPlayer.src = recording.audio_url;
+  elements.translationContext.value = recording.translation_context || "";
   elements.rawTranscript.value = recording.raw_transcript || "";
   elements.correctedTranscript.value = recording.corrected_transcript || "";
   elements.translationText.value = recording.final_translation || recording.draft_translation || "";
@@ -455,6 +627,10 @@ function renderRecording(recording) {
     "No warnings.",
     (warning) => escapeHtml(warning)
   );
+
+  drawWaveformFromUrl(recording.audio_url, recording.original_filename || "Loaded audio").catch(() => {
+    paintWaveformPlaceholder(`Preview unavailable for ${recording.original_filename || "loaded audio"}`);
+  });
 }
 
 async function loadBootstrap() {
@@ -467,6 +643,9 @@ async function loadBootstrap() {
 
   if (!state.currentRecording) {
     renderProcessing("idle");
+    if (!state.selectedFile) {
+      paintWaveformPlaceholder();
+    }
   }
 }
 
@@ -503,13 +682,13 @@ async function runProcessingPipeline(recording, sourceLabel) {
     return;
   }
 
-  renderProcessing("translating", "Drafting English translation...", transcribed.recording);
-  setMessage(elements.captureMessage, "Drafting translation...");
+  renderProcessing("translating", "Drafting English ideas...", transcribed.recording);
+  setMessage(elements.captureMessage, "Drafting translation ideas...");
   const drafted = await fetchJson(`/api/recordings/${recording.id}/draft-translation`, { method: "POST" });
   renderRecording(drafted.recording);
   setMessage(
     elements.captureMessage,
-    drafted.recording.processing_message || "Phonetic transcript ready for review."
+    drafted.recording.processing_message || "Translation ideas ready for review."
   );
   await loadBootstrap();
 }
@@ -526,6 +705,7 @@ async function uploadAudio() {
 
   const formData = new FormData();
   formData.append("file", state.selectedFile, state.selectedFile.name);
+  formData.append("translation_context", contextValue());
 
   try {
     const created = await fetchJson("/api/recordings", { method: "POST", body: formData });
@@ -550,7 +730,12 @@ async function useSampleAudio() {
   setMessage(elements.captureMessage, "Loading sample audio...");
 
   try {
-    const created = await fetchJson("/api/recordings/from-sample", { method: "POST" });
+    const created = await fetchJson("/api/recordings/from-sample", {
+      method: "POST",
+      body: JSON.stringify({
+        translation_context: contextValue(),
+      }),
+    });
     state.selectedFile = null;
     elements.fileInput.value = "";
     renderRecording(created.recording);
@@ -569,19 +754,20 @@ async function refreshDraft() {
   }
 
   elements.refreshButton.disabled = true;
-  renderProcessing("translating", "Refreshing the English draft...", state.currentRecording);
-  setMessage(elements.draftMessage, "Refreshing AI draft...");
+  renderProcessing("translating", "Refreshing English ideas...", state.currentRecording);
+  setMessage(elements.draftMessage, "Refreshing translation ideas...");
   try {
     const payload = await fetchJson(`/api/recordings/${state.currentRecording.id}/refresh-draft`, {
       method: "POST",
       body: JSON.stringify({
         corrected_transcript: elements.correctedTranscript.value,
+        translation_context: contextValue(),
       }),
     });
     renderRecording(payload.recording);
     setMessage(
       elements.draftMessage,
-      payload.recording.processing_message || "Draft translation ready for review."
+      payload.recording.processing_message || "Translation ideas ready for review."
     );
     await loadBootstrap();
   } catch (error) {
@@ -606,6 +792,7 @@ async function approveRecording() {
       body: JSON.stringify({
         corrected_transcript: elements.correctedTranscript.value,
         final_translation: elements.translationText.value,
+        translation_context: contextValue(),
         translation_notes: elements.translationNotes.value,
         topic_tags: elements.topicTags.value,
       }),
@@ -678,6 +865,9 @@ async function toggleRecording() {
       setMessage(elements.captureMessage, "Recording captured. Click Transcribe Audio to continue.");
       stopMicMonitor({ keepTimerValue: true, meterLabel: "Recording captured" });
       elements.recordingTimer.className = "pill success";
+      drawWaveformFromBlob(state.selectedFile, state.selectedFile.name).catch(() => {
+        paintWaveformPlaceholder(`Preview unavailable for ${state.selectedFile.name}`);
+      });
 
       if (state.audioStream) {
         state.audioStream.getTracks().forEach((track) => track.stop());
@@ -715,6 +905,11 @@ elements.fileInput.addEventListener("change", (event) => {
   if (state.selectedFile) {
     renderProcessing("idle", `Selected ${state.selectedFile.name}. Ready to upload.`, null);
     setMessage(elements.captureMessage, `Ready to transcribe ${state.selectedFile.name}.`);
+    drawWaveformFromBlob(state.selectedFile, state.selectedFile.name).catch(() => {
+      paintWaveformPlaceholder(`Preview unavailable for ${state.selectedFile.name}`);
+    });
+  } else {
+    paintWaveformPlaceholder();
   }
 });
 
@@ -737,6 +932,7 @@ document.addEventListener("click", (event) => {
 });
 
 resetMeter();
+paintWaveformPlaceholder();
 loadBootstrap().catch((error) => {
   renderProcessing("error", error.message, state.currentRecording);
   setMessage(elements.captureMessage, error.message);

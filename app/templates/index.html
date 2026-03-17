@@ -13,8 +13,8 @@
           <p class="eyebrow">Human-guided Navajo translation memory</p>
           <h1>{{ app_name }}</h1>
           <p class="lede">
-            Capture speech, generate a rough phonetic transcript, draft an English meaning, then
-            approve the final version so the system learns your dialect and project vocabulary.
+            Capture speech, generate a rough phonetic transcript, sketch English meaning ideas,
+            then approve the final version so the system learns your dialect and project vocabulary.
           </p>
         </div>
         <div class="hero-status">
@@ -91,6 +91,26 @@
               </div>
             </div>
 
+            <div class="capture-box">
+              <label class="field-label" for="translation-context">Context for translation ideas</label>
+              <textarea
+                id="translation-context"
+                rows="4"
+                placeholder="Who is speaking, what the clip is about, project background, likely topics, place names, water rights, permits, family context, ceremony, etc."
+              ></textarea>
+              <p class="helper-copy">
+                This helps the system suggest possible meanings and ideas. It should not try to make an exact final translation.
+              </p>
+            </div>
+
+            <div class="capture-box waveform-panel">
+              <div class="waveform-header">
+                <span class="field-label">Audio preview</span>
+                <span id="waveform-source" class="helper-copy">No audio selected yet.</span>
+              </div>
+              <canvas id="audio-waveform" class="audio-waveform" width="960" height="160"></canvas>
+            </div>
+
             <div class="capture-actions">
               <button id="upload-button" class="button" type="button">Transcribe Audio</button>
               <p id="capture-message" class="message"></p>
@@ -147,17 +167,17 @@
                 <textarea id="corrected-transcript" rows="8"></textarea>
 
                 <div class="inline-actions">
-                  <button id="refresh-button" class="button secondary" type="button">Refresh AI Draft</button>
+                  <button id="refresh-button" class="button secondary" type="button">Refresh Ideas</button>
                   <span id="draft-message" class="message"></span>
                 </div>
               </div>
 
               <div>
-                <label class="field-label" for="translation-text">Draft / final English meaning</label>
-                <textarea id="translation-text" rows="10"></textarea>
+                 <label class="field-label" for="translation-text">Possible meanings / working English notes</label>
+                 <textarea id="translation-text" rows="10"></textarea>
 
-                <label class="field-label" for="translation-notes">Notes for reviewers</label>
-                <textarea id="translation-notes" rows="3" placeholder="Context, speaker notes, uncertainties, place names..."></textarea>
+                 <label class="field-label" for="translation-notes">Notes for reviewers</label>
+                 <textarea id="translation-notes" rows="3" placeholder="Context, speaker notes, uncertainties, place names..."></textarea>
 
                 <label class="field-label" for="topic-tags">Topic tags</label>
                 <input id="topic-tags" type="text" placeholder="water, land, permits" />

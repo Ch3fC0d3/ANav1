@@ -229,6 +229,29 @@ button {
   margin-top: 0.85rem;
 }
 
+.waveform-panel {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.waveform-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.audio-waveform {
+  width: 100%;
+  height: 120px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(12, 123, 109, 0.08), rgba(183, 97, 47, 0.08)),
+    rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(46, 31, 24, 0.08);
+}
+
 .process-header {
   justify-content: space-between;
   align-items: start;

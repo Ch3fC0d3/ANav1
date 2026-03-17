@@ -176,12 +176,13 @@ def fallback_translation_draft(
     transcript: str,
     glossary_hits: list[dict[str, Any]],
     memory_hits: list[dict[str, Any]],
+    translation_context: str = "",
 ) -> dict[str, str]:
     if not transcript.strip():
         return {
             "draft_translation": "",
             "confidence": "low",
-            "draft_explanation": "No transcript is available yet. Add or correct the Navajo transcript, then refresh the draft.",
+            "draft_explanation": "No transcript is available yet. Add or correct the Navajo transcript, then refresh the ideas.",
         }
 
     glossary_summary = ", ".join(f"{hit['navajo_term']} = {hit['english_meaning']}" for hit in glossary_hits[:4])
@@ -191,9 +192,11 @@ def fallback_translation_draft(
         parts.append(f"Possible key terms: {glossary_summary}.")
     if memory_summary:
         parts.append(f"Similar approved meanings: {memory_summary}.")
+    if translation_context.strip():
+        parts.append(f"User-provided context: {translation_context.strip()}.")
     explanation = " ".join(parts) if parts else "AI drafting is unavailable, so this is a placeholder built from saved project memory."
     return {
-        "draft_translation": "Draft unavailable. Use the glossary and saved examples to write the first English pass.",
+        "draft_translation": "Idea draft unavailable. Use the context, glossary, and saved examples to sketch possible meanings.",
         "confidence": "low",
         "draft_explanation": explanation,
     }
@@ -203,12 +206,14 @@ def build_translation_draft(
     transcript: str,
     glossary_hits: list[dict[str, Any]],
     memory_hits: list[dict[str, Any]],
+    translation_context: str = "",
 ) -> dict[str, str]:
     if not settings.openai_configured or not transcript.strip():
-        return fallback_translation_draft(transcript, glossary_hits, memory_hits)
+        return fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
 
     glossary_block = json.dumps(glossary_hits, ensure_ascii=False, indent=2)
     memory_block = json.dumps(memory_hits, ensure_ascii=False, indent=2)
+    context_block = translation_context.strip() or "No extra context provided."
 
     try:
         client = OpenAI(api_key=settings.openai_api_key)
@@ -216,8 +221,10 @@ def build_translation_draft(
             model=settings.translation_model,
             instructions=(
                 "You assist with Navajo-to-English translation review. "
-                "You are not the final authority. Use the glossary and approved examples as hints, "
-                "be explicit about uncertainty, and never invent certainty. "
+                "The user does not want an exact final translation. "
+                "They want possible meanings, working interpretations, and idea sketches. "
+                "Use the provided context, glossary, and approved examples as hints. "
+                "Be explicit about uncertainty, avoid overclaiming, and never invent certainty. "
                 "Return valid JSON only."
             ),
             input=[
@@ -229,9 +236,11 @@ def build_translation_draft(
                             "text": (
                                 "Create a draft English translation for the Navajo transcript below.\n\n"
                                 f"Transcript:\n{transcript}\n\n"
+                                f"Context from the user:\n{context_block}\n\n"
                                 f"Glossary hits:\n{glossary_block}\n\n"
                                 f"Approved examples:\n{memory_block}\n\n"
                                 "Return JSON with keys: draft_translation, confidence, draft_explanation. "
+                                "Make draft_translation a short set of possible meanings or translation ideas, not a final answer. "
                                 "Confidence must be one of: low, medium, high."
                             ),
                         }
@@ -259,13 +268,13 @@ def build_translation_draft(
 
         payload = json.loads(getattr(response, "output_text", "").strip() or "{}")
         if not payload:
-            return fallback_translation_draft(transcript, glossary_hits, memory_hits)
+            return fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
         return {
             "draft_translation": payload.get("draft_translation", "").strip(),
             "confidence": payload.get("confidence", "low").strip() or "low",
             "draft_explanation": payload.get("draft_explanation", "").strip(),
         }
     except Exception as exc:
-        draft = fallback_translation_draft(transcript, glossary_hits, memory_hits)
+        draft = fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
         draft["draft_explanation"] = f"{draft['draft_explanation']} AI draft failed: {exc}"
         return draft
