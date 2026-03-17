@@ -29,6 +29,31 @@ class Settings:
         return bool(self.openai_api_key)
 
     @property
+    def normalized_transcription_language(self) -> str:
+        value = self.transcription_language.strip()
+        if not value:
+            return ""
+
+        lowered = value.lower()
+        invalid_values = {
+            self.transcription_model.lower(),
+            self.translation_model.lower(),
+            "whisper-1",
+        }
+        if lowered in invalid_values or lowered.startswith("gpt-") or "transcribe" in lowered:
+            return ""
+        return value
+
+    @property
+    def transcription_language_warning(self) -> str:
+        if self.transcription_language and not self.normalized_transcription_language:
+            return (
+                f"Ignored OPENAI_TRANSCRIPTION_LANGUAGE='{self.transcription_language}' because it looks like a model "
+                "name, not a language. Leave it blank for auto-detect or set it to a real language name/code."
+            )
+        return ""
+
+    @property
     def sample_audio_file(self) -> Path | None:
         if not self.sample_audio_path:
             return None

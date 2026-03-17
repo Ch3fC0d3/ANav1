@@ -160,8 +160,8 @@ def _build_transcription_request_kwargs(glossary_entries: list[dict[str, Any]]) 
     prompt = _build_transcription_prompt(glossary_entries)
     if prompt:
         request_kwargs["prompt"] = prompt
-    if settings.transcription_language:
-        request_kwargs["language"] = settings.transcription_language
+    if settings.normalized_transcription_language:
+        request_kwargs["language"] = settings.normalized_transcription_language
     return request_kwargs
 
 
@@ -442,6 +442,8 @@ def transcribe_audio(
     client = OpenAI(api_key=settings.openai_api_key)
     request_kwargs = _build_transcription_request_kwargs(glossary_entries)
     warnings: list[str] = []
+    if settings.transcription_language_warning:
+        warnings.append(settings.transcription_language_warning)
     transcript_sections: list[dict[str, Any]] = []
     words: list[dict[str, Any]] = []
 
