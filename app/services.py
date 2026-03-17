@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import re
+import shutil
+import subprocess
 import unicodedata
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from openai import OpenAI
 
 from .config import settings
+
+try:
+    import imageio_ffmpeg
+except Exception:
+    imageio_ffmpeg = None
 
 
 def normalize_text(value: str) -> str:
@@ -131,11 +140,7 @@ def rewrite_as_english_letter_phonetics(transcript: str, glossary_entries: list[
     return ascii_phonetic_text(transcript.strip())
 
 
-def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], list[str]]:
-    if not settings.openai_configured:
-        return "", [], ["OpenAI API key not configured. Add the transcript manually, then refresh the draft translation."]
-
-    client = OpenAI(api_key=settings.openai_api_key)
+def _build_transcription_request_kwargs(glossary_entries: list[dict[str, Any]]) -> dict[str, Any]:
     model_name = settings.transcription_model
     request_kwargs: dict[str, Any] = {
         "model": model_name,
@@ -145,31 +150,237 @@ def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -
         request_kwargs["timestamp_granularities"] = ["word"]
     else:
         request_kwargs["response_format"] = "json"
+
     prompt = _build_transcription_prompt(glossary_entries)
     if prompt:
         request_kwargs["prompt"] = prompt
     if settings.transcription_language:
         request_kwargs["language"] = settings.transcription_language
+    return request_kwargs
 
+
+def _resolve_ffmpeg_executable() -> str | None:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        return ffmpeg_path
+    if imageio_ffmpeg is None:
+        return None
     try:
-        with audio_path.open("rb") as audio_file:
-            transcript = client.audio.transcriptions.create(file=audio_file, **request_kwargs)
-    except Exception as exc:
-        return "", [], [f"Automatic transcription failed: {exc}"]
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
 
-    words = []
+
+def _extract_transcript_words(transcript: Any, time_offset_seconds: float = 0.0) -> list[dict[str, Any]]:
+    words: list[dict[str, Any]] = []
     for item in getattr(transcript, "words", []) or []:
+        start = getattr(item, "start", None)
+        end = getattr(item, "end", None)
         words.append(
             {
                 "word": getattr(item, "word", ""),
-                "start": getattr(item, "start", None),
-                "end": getattr(item, "end", None),
+                "start": start + time_offset_seconds if start is not None else None,
+                "end": end + time_offset_seconds if end is not None else None,
             }
         )
-    warnings: list[str] = []
+    return words
+
+
+@contextmanager
+def _prepare_transcription_chunks(audio_path: Path, chunk_seconds: int | None = None):
+    chunk_seconds = max(30, chunk_seconds or settings.transcription_chunk_seconds)
+    ffmpeg_path = _resolve_ffmpeg_executable()
+
+    if not ffmpeg_path:
+        yield [(audio_path, 0.0)], []
+        return
+
+    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir = settings.uploads_dir / f"anav1-transcribe-{uuid4().hex}"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        output_pattern = temp_dir / "chunk-%03d.wav"
+        command = [
+            ffmpeg_path,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(audio_path),
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "segment",
+            "-segment_time",
+            str(chunk_seconds),
+            "-segment_format",
+            "wav",
+            "-reset_timestamps",
+            "1",
+            str(output_pattern),
+        ]
+
+        try:
+            subprocess.run(command, capture_output=True, check=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = ""
+            if isinstance(exc, subprocess.CalledProcessError):
+                detail = (
+                    exc.stderr.decode("utf-8", "ignore").strip()
+                    or exc.stdout.decode("utf-8", "ignore").strip()
+                )
+            elif str(exc):
+                detail = str(exc)
+
+            warning = "Automatic chunking was unavailable, so the file was sent as one transcription request."
+            if detail:
+                warning = f"{warning} Chunking detail: {detail}"
+            yield [(audio_path, 0.0)], [warning]
+            return
+
+        chunk_paths = sorted(temp_dir.glob("chunk-*.wav"))
+        if not chunk_paths:
+            yield [(audio_path, 0.0)], ["Chunking produced no audio segments, so the file was sent as one transcription request."]
+            return
+
+        warnings: list[str] = []
+        if len(chunk_paths) > 1:
+            warnings.append(
+                f"Long audio was split into {len(chunk_paths)} chunks of about {chunk_seconds} seconds each before transcription."
+            )
+        yield [(chunk_path, index * chunk_seconds) for index, chunk_path in enumerate(chunk_paths)], warnings
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _transcribe_chunk_with_fallback(
+    client: OpenAI,
+    chunk_path: Path,
+    glossary_entries: list[dict[str, Any]],
+    request_kwargs: dict[str, Any],
+    time_offset_seconds: float,
+    chunk_seconds: int,
+    label: str,
+) -> tuple[list[str], list[dict[str, Any]], list[str]]:
+    try:
+        with chunk_path.open("rb") as audio_file:
+            transcript = client.audio.transcriptions.create(file=audio_file, **request_kwargs)
+    except Exception as exc:
+        return _retry_chunk_with_smaller_segments(
+            client,
+            chunk_path,
+            glossary_entries,
+            request_kwargs,
+            time_offset_seconds,
+            chunk_seconds,
+            f"{label} could not be transcribed: {exc}",
+            label,
+        )
+
     raw_text = (getattr(transcript, "text", "") or "").strip()
     phonetic_text = rewrite_as_english_letter_phonetics(raw_text, glossary_entries)
-    return phonetic_text, words, warnings
+    if phonetic_text:
+        return [phonetic_text], _extract_transcript_words(transcript, time_offset_seconds), []
+
+    return _retry_chunk_with_smaller_segments(
+        client,
+        chunk_path,
+        glossary_entries,
+        request_kwargs,
+        time_offset_seconds,
+        chunk_seconds,
+        f"{label} returned no transcript text.",
+        label,
+    )
+
+
+def _retry_chunk_with_smaller_segments(
+    client: OpenAI,
+    chunk_path: Path,
+    glossary_entries: list[dict[str, Any]],
+    request_kwargs: dict[str, Any],
+    time_offset_seconds: float,
+    chunk_seconds: int,
+    primary_warning: str,
+    label: str,
+) -> tuple[list[str], list[dict[str, Any]], list[str]]:
+    next_chunk_seconds = max(30, chunk_seconds // 2)
+    if next_chunk_seconds >= chunk_seconds:
+        return [], [], [primary_warning]
+
+    with _prepare_transcription_chunks(chunk_path, next_chunk_seconds) as (retry_chunks, retry_warnings):
+        retry_chunk_list = list(retry_chunks)
+        if len(retry_chunk_list) <= 1:
+            warnings = [primary_warning]
+            warnings.extend(retry_warnings)
+            return [], [], warnings
+
+        warnings = [f"{primary_warning} Retrying that section with smaller chunks."]
+        warnings.extend(retry_warnings)
+        transcript_parts: list[str] = []
+        words: list[dict[str, Any]] = []
+
+        for retry_index, (retry_chunk_path, retry_offset_seconds) in enumerate(retry_chunk_list, start=1):
+            nested_label = f"{label}.{retry_index}"
+            retry_texts, retry_words, nested_warnings = _transcribe_chunk_with_fallback(
+                client,
+                retry_chunk_path,
+                glossary_entries,
+                request_kwargs,
+                time_offset_seconds + retry_offset_seconds,
+                next_chunk_seconds,
+                nested_label,
+            )
+            transcript_parts.extend(retry_texts)
+            words.extend(retry_words)
+            warnings.extend(nested_warnings)
+
+        if transcript_parts:
+            return transcript_parts, words, warnings
+
+        return [], words, warnings
+
+
+def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], list[str]]:
+    if not settings.openai_configured:
+        return "", [], ["OpenAI API key not configured. Add the transcript manually, then refresh the draft translation."]
+
+    client = OpenAI(api_key=settings.openai_api_key)
+    request_kwargs = _build_transcription_request_kwargs(glossary_entries)
+    warnings: list[str] = []
+    transcript_chunks: list[str] = []
+    words: list[dict[str, Any]] = []
+
+    top_level_chunk_seconds = max(30, settings.transcription_chunk_seconds)
+    with _prepare_transcription_chunks(audio_path, top_level_chunk_seconds) as (audio_chunks, chunk_warnings):
+        warnings.extend(chunk_warnings)
+
+        for chunk_index, (chunk_path, time_offset_seconds) in enumerate(audio_chunks, start=1):
+            chunk_texts, chunk_words, chunk_warnings = _transcribe_chunk_with_fallback(
+                client,
+                chunk_path,
+                glossary_entries,
+                request_kwargs,
+                time_offset_seconds,
+                top_level_chunk_seconds,
+                f"Chunk {chunk_index}",
+            )
+            transcript_chunks.extend(chunk_texts)
+            words.extend(chunk_words)
+            warnings.extend(chunk_warnings)
+
+    if not transcript_chunks:
+        return "", words, warnings or ["Automatic transcription failed for every audio chunk."]
+
+    return "\n\n".join(transcript_chunks), words, warnings
 
 
 def fallback_translation_draft(

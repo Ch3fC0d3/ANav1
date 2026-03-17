@@ -1,6 +1,6 @@
 # ANav1
 
-ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets you upload or record audio, generate a rough Whisper transcript, draft an English translation with project memory, and approve the final version so future suggestions improve over time.
+ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets you upload or record audio, generate a rough phonetic transcript, draft English meaning ideas with project memory, and approve the final version so future suggestions improve over time.
 
 ## What it does
 
@@ -8,6 +8,7 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 - Load a local sample MP3 with one click when `SAMPLE_AUDIO_PATH` is configured
 - Record audio in the browser when supported
 - Transcribe speech into rough Navajo phonetic text with `gpt-4o-transcribe`
+- Break longer audio into smaller transcription chunks automatically before sending it to OpenAI
 - Draft an English meaning using:
   - glossary matches
   - similar approved phrases
@@ -52,13 +53,14 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 - `OPENAI_TRANSCRIPTION_MODEL`: defaults to `gpt-4o-transcribe`
 - `OPENAI_TRANSLATION_MODEL`: defaults to `gpt-4o-mini`
 - `OPENAI_TRANSCRIPTION_LANGUAGE`: optional; leave blank to let the model detect language
+- `OPENAI_TRANSCRIPTION_CHUNK_SECONDS`: defaults to `75`
 - `MAX_UPLOAD_MB`: defaults to `25`
 - `SAMPLE_AUDIO_PATH`: optional absolute path for a one-click local sample file button
 
 ## Workflow
 
 1. Capture or upload audio.
-2. Review the rough Whisper transcript.
+2. Review the rough phonetic transcript.
 3. Edit the Navajo text if needed.
 4. Refresh the AI draft translation after edits.
 5. Approve the final English meaning.
@@ -67,5 +69,6 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 ## Notes
 
 - Without `OPENAI_API_KEY`, the app still opens and stores sessions, but transcript and AI draft generation are manual.
+- Long audio chunking uses `imageio-ffmpeg` so the server can split recordings before transcription.
 - Approved phrases are stored locally in `data/app.db`.
 - Uploaded audio files are stored in `data/uploads/`.

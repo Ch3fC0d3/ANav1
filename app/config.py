@@ -21,6 +21,7 @@ class Settings:
     transcription_model: str = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe").strip()
     translation_model: str = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini").strip()
     transcription_language: str = os.getenv("OPENAI_TRANSCRIPTION_LANGUAGE", "").strip()
+    transcription_chunk_seconds: int = int(os.getenv("OPENAI_TRANSCRIPTION_CHUNK_SECONDS", "75"))
     sample_audio_path: str = os.getenv("SAMPLE_AUDIO_PATH", "").strip()
 
     @property

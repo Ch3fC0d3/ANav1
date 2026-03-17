@@ -218,7 +218,7 @@ async def transcribe_recording(recording_id: str):
         recording_id,
         {
             "processing_stage": "transcribing",
-            "processing_message": f"Transcribing audio with {settings.transcription_model}...",
+            "processing_message": f"Transcribing audio in chunks with {settings.transcription_model}...",
         },
     )
 

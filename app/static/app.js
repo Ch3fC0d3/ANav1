@@ -666,10 +666,10 @@ function setCaptureButtonsBusy(isBusy) {
 async function runProcessingPipeline(recording, sourceLabel) {
   renderProcessing(
     "transcribing",
-    `Transcribing ${sourceLabel} with ${state.bootstrap?.app?.transcription_model || "the current model"}...`,
+    `Transcribing ${sourceLabel} in chunks with ${state.bootstrap?.app?.transcription_model || "the current model"}...`,
     recording
   );
-  setMessage(elements.captureMessage, "Transcribing audio...");
+  setMessage(elements.captureMessage, "Transcribing audio in chunks...");
   const transcribed = await fetchJson(`/api/recordings/${recording.id}/transcribe`, { method: "POST" });
   renderRecording(transcribed.recording);
 
