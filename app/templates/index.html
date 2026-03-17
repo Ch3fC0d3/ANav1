@@ -14,7 +14,7 @@
           <p class="eyebrow">Human-guided Navajo translation memory</p>
           <h1>{{ app_name }}</h1>
           <p class="lede">
-            Capture speech, generate a rough phonetic transcript, sketch English meaning ideas,
+            Capture speech, generate a rough phonetic transcript, sketch plain-English meeting notes,
             then approve the final version so the system learns your dialect and project vocabulary.
           </p>
         </div>
@@ -26,7 +26,7 @@
             </strong>
             <p>
               {% if openai_configured %}
-              Upload audio to transcribe and draft translations.
+              Upload audio to transcribe and draft meeting notes.
               {% else %}
               The app still works for manual review, but automatic transcription needs
               <code>OPENAI_API_KEY</code>.
@@ -169,11 +169,36 @@
               </div>
 
               <div class="review-column">
-                 <label class="field-label" for="translation-text">Possible meanings / working English notes</label>
-                 <textarea id="translation-text" rows="10"></textarea>
+                <div class="insight-card meeting-card">
+                  <div class="meeting-card-header">
+                    <div>
+                      <span class="field-label">Meeting understanding</span>
+                      <h3>Likely topics and notes</h3>
+                    </div>
+                    <p class="helper-copy">Plain-English notes from timed audio sections.</p>
+                  </div>
+                  <p id="meeting-overall-takeaway" class="helper-copy">
+                    Meeting notes will appear here after transcription and drafting.
+                  </p>
+                  <ul id="meeting-summary-list" class="stack-list compact-list"></ul>
+                </div>
 
-                 <label class="field-label" for="translation-notes">Notes for reviewers</label>
-                 <textarea id="translation-notes" rows="3" placeholder="Context, speaker notes, uncertainties, place names..."></textarea>
+                <div class="insight-card meeting-card">
+                  <div class="meeting-card-header">
+                    <div>
+                      <span class="field-label">Timeline view</span>
+                      <h3>Section-by-section notes</h3>
+                    </div>
+                    <p class="helper-copy">Use the timestamps to jump back into the audio.</p>
+                  </div>
+                  <ul id="meeting-gist-list" class="meeting-gist-list"></ul>
+                </div>
+
+                <label class="field-label" for="translation-text">Editable meeting notes / working English</label>
+                <textarea id="translation-text" rows="10"></textarea>
+
+                <label class="field-label" for="translation-notes">Notes for reviewers</label>
+                <textarea id="translation-notes" rows="3" placeholder="Context, speaker notes, uncertainties, place names..."></textarea>
 
                 <label class="field-label" for="topic-tags">Topic tags</label>
                 <input id="topic-tags" type="text" placeholder="water, land, permits" />
@@ -183,7 +208,7 @@
             <div class="review-action-bar">
               <p id="draft-message" class="message"></p>
               <div class="review-action-buttons">
-                <button id="refresh-button" class="button secondary" type="button">Refresh Ideas</button>
+                <button id="refresh-button" class="button secondary" type="button">Refresh Notes</button>
                 <button id="approve-button" class="button" type="button">Approve Final Version</button>
               </div>
             </div>

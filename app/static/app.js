@@ -12,6 +12,7 @@ const state = {
   timerInterval: null,
   recordingStartedAt: null,
   waveformDrawToken: 0,
+  playbackStopAt: null,
   dismissedRecentIds: new Set(),
 };
 
@@ -29,6 +30,9 @@ const elements = {
   rawTranscript: document.getElementById("raw-transcript"),
   correctedTranscript: document.getElementById("corrected-transcript"),
   translationText: document.getElementById("translation-text"),
+  meetingOverallTakeaway: document.getElementById("meeting-overall-takeaway"),
+  meetingSummaryList: document.getElementById("meeting-summary-list"),
+  meetingGistList: document.getElementById("meeting-gist-list"),
   translationNotes: document.getElementById("translation-notes"),
   topicTags: document.getElementById("topic-tags"),
   refreshButton: document.getElementById("refresh-button"),
@@ -96,19 +100,19 @@ const PROCESS_SNAPSHOTS = {
     title: "Transcript Ready",
     pill: "Transcript Ready",
     pillClass: "pill active",
-    message: "Phonetic transcript is ready. Preparing translation context...",
+    message: "Phonetic transcript is ready. Preparing meeting notes...",
   },
   translating: {
-    title: "Translating",
-    pill: "Translating",
+    title: "Drafting Notes",
+    pill: "Drafting Notes",
     pillClass: "pill active",
-    message: "Drafting English ideas section by section...",
+    message: "Drafting meeting-understanding notes section by section...",
   },
   done: {
     title: "Done",
     pill: "Done",
     pillClass: "pill success",
-    message: "Translation ideas ready for review.",
+    message: "Meeting notes ready for review.",
   },
   approved: {
     title: "Approved",
@@ -614,6 +618,108 @@ function renderHitList(target, hits, emptyText, formatter) {
   });
 }
 
+function formatTimestamp(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) {
+    return "Unknown";
+  }
+
+  const totalSeconds = Math.max(0, Math.round(Number(seconds)));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  if (hours) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+function confidencePillClass(confidence) {
+  if (confidence === "high") {
+    return "pill success";
+  }
+  if (confidence === "medium") {
+    return "pill active";
+  }
+  return "pill muted";
+}
+
+function renderMeetingSummary(summary) {
+  const items = [];
+  const overallTakeaway = summary?.overall_takeaway?.trim();
+  elements.meetingOverallTakeaway.textContent =
+    overallTakeaway || "Meeting notes will appear here after transcription and drafting.";
+
+  const summarySections = [
+    ["Main topics", summary?.main_topics || []],
+    ["Concerns or requests", summary?.concerns_requests || []],
+    ["Decisions or actions", summary?.decisions_actions || []],
+    ["Names, places, or numbers", summary?.names_numbers || []],
+  ];
+
+  summarySections.forEach(([label, values]) => {
+    const cleanValues = values.map((value) => String(value || "").trim()).filter(Boolean);
+    if (!cleanValues.length) {
+      return;
+    }
+    items.push({
+      label,
+      values: cleanValues,
+    });
+  });
+
+  renderHitList(
+    elements.meetingSummaryList,
+    items,
+    "No summary notes yet.",
+    (item) => `<strong>${escapeHtml(item.label)}</strong><p>${escapeHtml(item.values.join("; "))}</p>`
+  );
+}
+
+function renderMeetingGist(items) {
+  elements.meetingGistList.innerHTML = "";
+  if (!items?.length) {
+    elements.meetingGistList.innerHTML = "<li>No section notes yet.</li>";
+    return;
+  }
+
+  items.forEach((item, index) => {
+    const details = (item.important_details || [])
+      .map((detail) => String(detail || "").trim())
+      .filter(Boolean);
+    const start = item.start_seconds;
+    const end = item.end_seconds;
+    const label =
+      item.label ||
+      (start !== null && start !== undefined ? `${formatTimestamp(start)}-${formatTimestamp(end)}` : `Section ${index + 1}`);
+
+    const detailList = details.length
+      ? `<ul class="meeting-detail-list">${details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
+      : "";
+
+    const canPlay = start !== null && start !== undefined;
+    const playButton = canPlay
+      ? `<button class="button secondary mini-button" type="button" data-play-segment="${escapeHtml(start)}" data-stop-segment="${escapeHtml(end ?? "")}">Play clip</button>`
+      : "";
+
+    const listItem = document.createElement("li");
+    listItem.innerHTML = `
+      <div class="meeting-gist-header">
+        <div>
+          <strong>${escapeHtml(label)}</strong>
+          <p class="helper-copy">${escapeHtml(item.headline || "Possible discussion point")}</p>
+        </div>
+        <span class="${confidencePillClass(item.confidence || "low")}">${escapeHtml(item.confidence || "low")}</span>
+      </div>
+      <p>${escapeHtml(item.gist || "No meeting note yet.")}</p>
+      ${detailList}
+      <div class="meeting-gist-actions">
+        ${playButton}
+      </div>
+    `;
+    elements.meetingGistList.appendChild(listItem);
+  });
+}
+
 function renderSampleControl(appConfig) {
   const isAvailable = Boolean(appConfig?.sample_audio_available);
   elements.sampleAudioButton.hidden = !isAvailable;
@@ -633,6 +739,7 @@ function renderRecording(recording) {
   state.currentRecording = recording;
   elements.reviewPanel.hidden = false;
   elements.audioPlayer.src = recording.audio_url;
+  state.playbackStopAt = null;
   elements.translationContext.value = recording.translation_context || "";
   elements.rawTranscript.value = recording.raw_transcript || "";
   elements.correctedTranscript.value = recording.corrected_transcript || "";
@@ -643,6 +750,8 @@ function renderRecording(recording) {
   elements.confidenceBadge.textContent = `Confidence: ${recording.confidence || "low"}`;
   elements.statusBadge.textContent = recording.status === "approved" ? "Approved" : "Needs review";
   elements.statusBadge.className = `pill ${recording.status === "approved" ? "success" : "muted"}`;
+  renderMeetingSummary(recording.meeting_summary || {});
+  renderMeetingGist(recording.meeting_gist || []);
 
   renderProcessing(
     recording.processing_stage || (recording.status === "approved" ? "approved" : "done"),
@@ -727,13 +836,13 @@ async function runProcessingPipeline(recording, sourceLabel) {
     return;
   }
 
-  renderProcessing("translating", "Drafting English ideas section by section...", transcribed.recording);
-  setMessage(elements.captureMessage, "Drafting translation ideas section by section...");
+  renderProcessing("translating", "Drafting meeting notes section by section...", transcribed.recording);
+  setMessage(elements.captureMessage, "Drafting meeting notes section by section...");
   const drafted = await fetchJson(`/api/recordings/${recording.id}/draft-translation`, { method: "POST" });
   renderRecording(drafted.recording);
   setMessage(
     elements.captureMessage,
-    drafted.recording.processing_message || "Translation ideas ready for review."
+    drafted.recording.processing_message || "Meeting notes ready for review."
   );
   await loadBootstrap();
 }
@@ -799,8 +908,8 @@ async function refreshDraft() {
   }
 
   elements.refreshButton.disabled = true;
-  renderProcessing("translating", "Refreshing English ideas section by section...", state.currentRecording);
-  setMessage(elements.draftMessage, "Refreshing translation ideas section by section...");
+  renderProcessing("translating", "Refreshing meeting notes section by section...", state.currentRecording);
+  setMessage(elements.draftMessage, "Refreshing meeting notes section by section...");
   try {
     const payload = await fetchJson(`/api/recordings/${state.currentRecording.id}/refresh-draft`, {
       method: "POST",
@@ -812,7 +921,7 @@ async function refreshDraft() {
     renderRecording(payload.recording);
     setMessage(
       elements.draftMessage,
-      payload.recording.processing_message || "Translation ideas ready for review."
+      payload.recording.processing_message || "Meeting notes ready for review."
     );
     await loadBootstrap();
   } catch (error) {
@@ -965,8 +1074,31 @@ elements.approveButton.addEventListener("click", approveRecording);
 elements.glossaryForm.addEventListener("submit", addGlossaryEntry);
 elements.recordToggle.addEventListener("click", toggleRecording);
 elements.restoreRecentButton.addEventListener("click", restoreDismissedRecentRecordings);
+elements.audioPlayer.addEventListener("timeupdate", () => {
+  if (state.playbackStopAt === null) {
+    return;
+  }
+  if (elements.audioPlayer.currentTime >= state.playbackStopAt) {
+    elements.audioPlayer.pause();
+    state.playbackStopAt = null;
+  }
+});
 
 document.addEventListener("click", (event) => {
+  const playButton = event.target.closest("[data-play-segment]");
+  if (playButton) {
+    const start = Number.parseFloat(playButton.dataset.playSegment || "");
+    const stop = Number.parseFloat(playButton.dataset.stopSegment || "");
+    if (!Number.isNaN(start)) {
+      elements.audioPlayer.currentTime = Math.max(0, start);
+      state.playbackStopAt = Number.isNaN(stop) ? null : Math.max(start + 0.5, stop);
+      elements.audioPlayer.play().catch(() => {
+        state.playbackStopAt = null;
+      });
+    }
+    return;
+  }
+
   const dismissButton = event.target.closest("[data-dismiss-recording]");
   if (dismissButton) {
     dismissRecentRecording(dismissButton.dataset.dismissRecording);

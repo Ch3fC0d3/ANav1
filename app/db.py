@@ -8,7 +8,15 @@ from typing import Any
 from .config import settings
 
 
-JSON_FIELDS = {"glossary_hits", "example_hits", "transcript_words", "warnings"}
+JSON_ARRAY_FIELDS = {
+    "glossary_hits",
+    "example_hits",
+    "transcript_words",
+    "warnings",
+    "transcript_sections",
+    "meeting_gist",
+}
+JSON_OBJECT_FIELDS = {"meeting_summary"}
 
 
 def utc_now() -> str:
@@ -59,6 +67,9 @@ def init_db() -> None:
                 example_hits_json TEXT NOT NULL DEFAULT '[]',
                 transcript_words_json TEXT NOT NULL DEFAULT '[]',
                 warnings_json TEXT NOT NULL DEFAULT '[]',
+                transcript_sections_json TEXT NOT NULL DEFAULT '[]',
+                meeting_gist_json TEXT NOT NULL DEFAULT '[]',
+                meeting_summary_json TEXT NOT NULL DEFAULT '{}',
                 processing_stage TEXT NOT NULL DEFAULT 'idle',
                 processing_message TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -76,6 +87,9 @@ def init_db() -> None:
                 "processing_stage": "TEXT NOT NULL DEFAULT 'idle'",
                 "processing_message": "TEXT NOT NULL DEFAULT ''",
                 "translation_context": "TEXT NOT NULL DEFAULT ''",
+                "transcript_sections_json": "TEXT NOT NULL DEFAULT '[]'",
+                "meeting_gist_json": "TEXT NOT NULL DEFAULT '[]'",
+                "meeting_summary_json": "TEXT NOT NULL DEFAULT '{}'",
             },
         )
 
@@ -100,6 +114,9 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     item["example_hits"] = json.loads(item.pop("example_hits_json", "[]"))
     item["transcript_words"] = json.loads(item.pop("transcript_words_json", "[]"))
     item["warnings"] = json.loads(item.pop("warnings_json", "[]"))
+    item["transcript_sections"] = json.loads(item.pop("transcript_sections_json", "[]"))
+    item["meeting_gist"] = json.loads(item.pop("meeting_gist_json", "[]"))
+    item["meeting_summary"] = json.loads(item.pop("meeting_summary_json", "{}"))
     item.setdefault("processing_stage", "idle")
     item.setdefault("processing_message", "")
     return item
@@ -162,13 +179,16 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 example_hits_json,
                 transcript_words_json,
                 warnings_json,
+                transcript_sections_json,
+                meeting_gist_json,
+                meeting_summary_json,
                 processing_stage,
                 processing_message,
                 created_at,
                 updated_at,
                 approved_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["id"],
@@ -189,6 +209,9 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 json.dumps(payload.get("example_hits", [])),
                 json.dumps(payload.get("transcript_words", [])),
                 json.dumps(payload.get("warnings", [])),
+                json.dumps(payload.get("transcript_sections", [])),
+                json.dumps(payload.get("meeting_gist", [])),
+                json.dumps(payload.get("meeting_summary", {})),
                 payload.get("processing_stage", "idle"),
                 payload.get("processing_message", ""),
                 timestamp,
@@ -205,7 +228,10 @@ def update_recording(recording_id: str, updates: dict[str, Any]) -> dict[str, An
         return get_recording(recording_id)
 
     normalized = dict(updates)
-    for field in JSON_FIELDS:
+    for field in JSON_ARRAY_FIELDS:
+        if field in normalized:
+            normalized[f"{field}_json"] = json.dumps(normalized.pop(field))
+    for field in JSON_OBJECT_FIELDS:
         if field in normalized:
             normalized[f"{field}_json"] = json.dumps(normalized.pop(field))
 

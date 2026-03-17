@@ -224,6 +224,7 @@ button {
   display: grid;
   gap: 0.85rem;
   align-content: start;
+  min-width: 0;
 }
 
 .review-action-bar {
@@ -245,11 +246,36 @@ button {
   gap: 0.75rem;
 }
 
+.meeting-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.meeting-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+}
+
+.meeting-card-header .helper-copy {
+  margin: 0;
+  max-width: 16rem;
+  text-align: right;
+}
+
 .session-card-header {
   display: flex;
-  align-items: start;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+  min-width: 0;
+}
+
+.session-card-header strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .dismiss-button {
@@ -279,6 +305,76 @@ button {
   color: var(--accent);
   border: 1px solid rgba(12, 123, 109, 0.16);
   box-shadow: none;
+}
+
+.mini-button {
+  padding: 0.55rem 0.85rem;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+.compact-list {
+  gap: 0.6rem;
+}
+
+.compact-list li {
+  padding: 0.85rem 0.95rem;
+}
+
+.meeting-gist-list,
+.meeting-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.meeting-gist-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.meeting-gist-list li {
+  display: grid;
+  gap: 0.7rem;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(46, 31, 24, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 0.95rem;
+}
+
+.meeting-gist-header,
+.meeting-gist-actions {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.meeting-gist-header p,
+.meeting-gist-list p {
+  margin: 0;
+}
+
+.meeting-detail-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.meeting-detail-list li {
+  padding-left: 1rem;
+  position: relative;
+  color: var(--muted);
+}
+
+.meeting-detail-list li::before {
+  content: "";
+  position: absolute;
+  left: 0.1rem;
+  top: 0.68rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: rgba(183, 97, 47, 0.72);
 }
 
 .process-panel {
@@ -684,6 +780,22 @@ code {
   }
 
   .ghost-button {
+    width: 100%;
+  }
+
+  .meeting-card-header,
+  .meeting-gist-header,
+  .meeting-gist-actions {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .meeting-card-header .helper-copy {
+    max-width: none;
+    text-align: left;
+  }
+
+  .mini-button {
     width: 100%;
   }
 

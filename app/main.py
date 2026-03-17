@@ -223,7 +223,10 @@ async def transcribe_recording(recording_id: str):
     )
 
     glossary_entries = list_glossary()
-    transcript, transcript_words, warnings = transcribe_audio(Path(recording["audio_path"]), glossary_entries)
+    transcript, transcript_words, transcript_sections, warnings = transcribe_audio(
+        Path(recording["audio_path"]),
+        glossary_entries,
+    )
     has_transcript = bool(transcript.strip())
     processing_stage = "transcribed" if has_transcript else "error"
     processing_message = (
@@ -238,6 +241,9 @@ async def transcribe_recording(recording_id: str):
             "raw_transcript": transcript,
             "corrected_transcript": transcript,
             "transcript_words": transcript_words,
+            "transcript_sections": transcript_sections,
+            "meeting_gist": [],
+            "meeting_summary": {},
             "warnings": warnings,
             "processing_stage": processing_stage,
             "processing_message": processing_message,
@@ -258,7 +264,7 @@ async def draft_translation(recording_id: str):
         recording_id,
         {
             "processing_stage": "translating",
-            "processing_message": f"Drafting English ideas section by section with {settings.translation_model}...",
+            "processing_message": f"Drafting meeting notes section by section with {settings.translation_model}...",
         },
     )
 
@@ -266,10 +272,16 @@ async def draft_translation(recording_id: str):
     approved_examples = list_approved_memories(limit=40)
     glossary_hits = find_glossary_hits(transcript_source, glossary_entries)
     example_hits = find_memory_hits(transcript_source, approved_examples)
-    draft = build_translation_draft(transcript_source, glossary_hits, example_hits, translation_context)
+    draft = build_translation_draft(
+        transcript_source,
+        glossary_hits,
+        example_hits,
+        translation_context,
+        transcript_sections=recording.get("transcript_sections", []),
+    )
 
     processing_message = (
-        "Translation ideas ready for review."
+        "Meeting notes ready for review."
         if transcript_source
         else "Processing finished, but the transcript still needs to be entered or corrected manually."
     )
@@ -284,6 +296,9 @@ async def draft_translation(recording_id: str):
             "translation_context": translation_context,
             "glossary_hits": glossary_hits,
             "example_hits": example_hits,
+            "transcript_sections": draft.get("transcript_sections", recording.get("transcript_sections", [])),
+            "meeting_gist": draft.get("meeting_gist", []),
+            "meeting_summary": draft.get("meeting_summary", {}),
             "processing_stage": "done",
             "processing_message": processing_message,
         },
@@ -306,6 +321,7 @@ async def refresh_draft(recording_id: str, request: DraftRefreshRequest):
         glossary_hits,
         example_hits,
         request.translation_context,
+        transcript_sections=recording.get("transcript_sections", []),
     )
     updated = update_recording(
         recording_id,
@@ -317,8 +333,11 @@ async def refresh_draft(recording_id: str, request: DraftRefreshRequest):
             "translation_context": request.translation_context.strip(),
             "glossary_hits": glossary_hits,
             "example_hits": example_hits,
+            "transcript_sections": draft.get("transcript_sections", recording.get("transcript_sections", [])),
+            "meeting_gist": draft.get("meeting_gist", []),
+            "meeting_summary": draft.get("meeting_summary", {}),
             "processing_stage": "done",
-            "processing_message": "Translation ideas ready for review.",
+            "processing_message": "Meeting notes ready for review.",
         },
     )
     return {"recording": serialize_recording(updated)}
