@@ -12,7 +12,10 @@ const state = {
   timerInterval: null,
   recordingStartedAt: null,
   waveformDrawToken: 0,
+  dismissedRecentIds: new Set(),
 };
+
+const DISMISSED_RECENT_STORAGE_KEY = "anav1.dismissedRecentIds";
 
 const elements = {
   fileInput: document.getElementById("audio-file"),
@@ -40,6 +43,7 @@ const elements = {
   glossaryList: document.getElementById("glossary-list"),
   approvedList: document.getElementById("approved-list"),
   recentList: document.getElementById("recent-list"),
+  restoreRecentButton: document.getElementById("restore-recent-button"),
   glossaryForm: document.getElementById("glossary-form"),
   glossaryTerm: document.getElementById("glossary-term"),
   glossaryMeaning: document.getElementById("glossary-meaning"),
@@ -122,6 +126,27 @@ const PROCESS_SNAPSHOTS = {
 
 function setMessage(element, message) {
   element.textContent = message;
+}
+
+function loadDismissedRecentIds() {
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_RECENT_STORAGE_KEY);
+    const values = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(values) ? values : []);
+  } catch (error) {
+    return new Set();
+  }
+}
+
+function saveDismissedRecentIds() {
+  try {
+    window.localStorage.setItem(
+      DISMISSED_RECENT_STORAGE_KEY,
+      JSON.stringify(Array.from(state.dismissedRecentIds))
+    );
+  } catch (error) {
+    return;
+  }
 }
 
 function contextValue() {
@@ -538,21 +563,41 @@ function displaySessionState(entry) {
 
 function renderRecentList(entries) {
   elements.recentList.innerHTML = "";
-  if (!entries.length) {
-    elements.recentList.innerHTML = "<li>No sessions yet.</li>";
+  elements.restoreRecentButton.hidden = state.dismissedRecentIds.size === 0;
+
+  const visibleEntries = entries.filter((entry) => !state.dismissedRecentIds.has(entry.id));
+  if (!visibleEntries.length) {
+    elements.recentList.innerHTML = state.dismissedRecentIds.size
+      ? "<li>No visible sessions. Tap Show Hidden to restore dismissed items.</li>"
+      : "<li>No sessions yet.</li>";
     return;
   }
 
-  entries.forEach((entry) => {
+  visibleEntries.forEach((entry) => {
     const item = document.createElement("li");
     item.innerHTML = `
-      <strong>${escapeHtml(entry.original_filename)}</strong>
+      <div class="session-card-header">
+        <strong>${escapeHtml(entry.original_filename)}</strong>
+        <button class="dismiss-button" type="button" aria-label="Hide session" title="Hide from Recent Work" data-dismiss-recording="${entry.id}">x</button>
+      </div>
       <p>${escapeHtml((entry.corrected_transcript || entry.raw_transcript || "Transcript pending").slice(0, 120))}</p>
       <p class="helper-copy">${escapeHtml(displaySessionState(entry))}</p>
       <button class="button secondary" type="button" data-load-recording="${entry.id}">Open</button>
     `;
     elements.recentList.appendChild(item);
   });
+}
+
+function dismissRecentRecording(recordingId) {
+  state.dismissedRecentIds.add(recordingId);
+  saveDismissedRecentIds();
+  renderRecentList(state.bootstrap?.recent_recordings || []);
+}
+
+function restoreDismissedRecentRecordings() {
+  state.dismissedRecentIds.clear();
+  saveDismissedRecentIds();
+  renderRecentList(state.bootstrap?.recent_recordings || []);
 }
 
 function renderHitList(target, hits, emptyText, formatter) {
@@ -919,8 +964,15 @@ elements.refreshButton.addEventListener("click", refreshDraft);
 elements.approveButton.addEventListener("click", approveRecording);
 elements.glossaryForm.addEventListener("submit", addGlossaryEntry);
 elements.recordToggle.addEventListener("click", toggleRecording);
+elements.restoreRecentButton.addEventListener("click", restoreDismissedRecentRecordings);
 
 document.addEventListener("click", (event) => {
+  const dismissButton = event.target.closest("[data-dismiss-recording]");
+  if (dismissButton) {
+    dismissRecentRecording(dismissButton.dataset.dismissRecording);
+    return;
+  }
+
   const button = event.target.closest("[data-load-recording]");
   if (!button) {
     return;
@@ -931,6 +983,7 @@ document.addEventListener("click", (event) => {
   });
 });
 
+state.dismissedRecentIds = loadDismissedRecentIds();
 resetMeter();
 paintWaveformPlaceholder();
 loadBootstrap().catch((error) => {

@@ -245,6 +245,42 @@ button {
   gap: 0.75rem;
 }
 
+.session-card-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dismiss-button {
+  flex: 0 0 auto;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(46, 31, 24, 0.08);
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.dismiss-button:hover {
+  background: rgba(183, 97, 47, 0.18);
+  color: var(--clay);
+  transform: translateY(-1px);
+}
+
+.ghost-button {
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent);
+  border: 1px solid rgba(12, 123, 109, 0.16);
+  box-shadow: none;
+}
+
 .process-panel {
   display: grid;
   gap: 0.9rem;
@@ -645,6 +681,16 @@ code {
     width: 100%;
     min-height: 3.2rem;
     padding: 0.9rem 1.1rem;
+  }
+
+  .ghost-button {
+    width: 100%;
+  }
+
+  .dismiss-button {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
   }
 
   .audio-waveform {
