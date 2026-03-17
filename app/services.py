@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,13 @@ def normalize_text(value: str) -> str:
 
 def tokenize(value: str) -> list[str]:
     return re.findall(r"[a-zA-Z']+", normalize_text(value))
+
+
+def ascii_phonetic_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    ascii_text = re.sub(r"[^A-Za-z0-9' -]+", " ", ascii_text)
+    return re.sub(r"\s+", " ", ascii_text).strip()
 
 
 def find_glossary_hits(transcript: str, glossary_entries: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
@@ -118,6 +126,11 @@ def _build_transcription_prompt(glossary_entries: list[dict[str, Any]]) -> str:
     return ", ".join(terms)
 
 
+def rewrite_as_english_letter_phonetics(transcript: str, glossary_entries: list[dict[str, Any]]) -> str:
+    del glossary_entries
+    return ascii_phonetic_text(transcript.strip())
+
+
 def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], list[str]]:
     if not settings.openai_configured:
         return "", [], ["OpenAI API key not configured. Add the transcript manually, then refresh the draft translation."]
@@ -150,7 +163,9 @@ def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -
             }
         )
     warnings: list[str] = []
-    return (getattr(transcript, "text", "") or "").strip(), words, warnings
+    raw_text = (getattr(transcript, "text", "") or "").strip()
+    phonetic_text = rewrite_as_english_letter_phonetics(raw_text, glossary_entries)
+    return phonetic_text, words, warnings
 
 
 def fallback_translation_draft(

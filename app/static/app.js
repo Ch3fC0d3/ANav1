@@ -192,7 +192,7 @@ async function uploadAudio() {
   try {
     const payload = await fetchJson("/api/recordings", { method: "POST", body: formData });
     renderRecording(payload.recording);
-    setMessage(elements.captureMessage, "Transcript ready for review.");
+    setMessage(elements.captureMessage, "Phonetic transcript ready for review.");
     await loadBootstrap();
   } catch (error) {
     setMessage(elements.captureMessage, error.message);
