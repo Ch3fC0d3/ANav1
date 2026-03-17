@@ -220,6 +220,31 @@ button {
   gap: 0.75rem;
 }
 
+.review-column {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.review-action-bar {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(46, 31, 24, 0.08);
+}
+
+.review-action-bar .message {
+  margin: 0;
+}
+
+.review-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .process-panel {
   display: grid;
   gap: 0.9rem;
@@ -416,6 +441,20 @@ textarea {
 
 textarea {
   resize: vertical;
+  min-height: 8rem;
+}
+
+#raw-transcript {
+  min-height: 10rem;
+}
+
+#corrected-transcript,
+#translation-text {
+  min-height: 16rem;
+}
+
+#translation-context {
+  min-height: 7.5rem;
 }
 
 input:focus,
@@ -427,6 +466,7 @@ button:focus {
 
 .audio-player {
   width: 100%;
+  min-height: 54px;
 }
 
 .insight-grid {
@@ -504,12 +544,137 @@ code {
   .hero,
   .workspace,
   .insight-grid,
-  .review-grid {
+  .review-grid,
+  .capture-grid {
     grid-template-columns: 1fr;
   }
 
   .shell {
     width: min(100% - 1rem, 1000px);
     padding-top: 0.75rem;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.58), transparent 32%),
+      linear-gradient(160deg, #f9efe5 0%, #f0dcc4 46%, #d8e7df 100%);
+  }
+
+  .shell {
+    width: min(100% - 0.65rem, 1000px);
+    padding: 0.45rem 0 6.5rem;
+  }
+
+  .panel {
+    border-radius: 20px;
+  }
+
+  .hero,
+  .capture-panel,
+  .review-panel,
+  .sidebar .panel {
+    padding: 1rem;
+  }
+
+  .hero {
+    gap: 1rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 11vw, 3rem);
+    line-height: 0.98;
+  }
+
+  h2 {
+    font-size: 1.22rem;
+  }
+
+  .lede,
+  .helper-copy,
+  .message,
+  p,
+  li,
+  input,
+  textarea,
+  button {
+    font-size: 1rem;
+  }
+
+  input,
+  textarea {
+    font-size: 16px;
+    padding: 0.95rem 1rem;
+  }
+
+  .section-heading,
+  .capture-actions,
+  .recorder-actions,
+  .sample-row,
+  .badge-row,
+  .waveform-header,
+  .process-header,
+  .meter-meta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .capture-actions,
+  .review-action-buttons {
+    gap: 0.65rem;
+  }
+
+  .capture-box,
+  .process-panel,
+  .insight-card,
+  .stack-list li,
+  .example-list li,
+  .chip-list li,
+  .review-action-bar {
+    padding: 0.9rem;
+  }
+
+  .progress-steps {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .button {
+    width: 100%;
+    min-height: 3.2rem;
+    padding: 0.9rem 1.1rem;
+  }
+
+  .audio-waveform {
+    height: 96px;
+  }
+
+  .mic-meter {
+    min-height: 76px;
+    gap: 0.28rem;
+    padding: 0.8rem 0.7rem;
+  }
+
+  .review-grid {
+    gap: 1rem;
+  }
+
+  #raw-transcript {
+    min-height: 8rem;
+  }
+
+  #corrected-transcript,
+  #translation-text {
+    min-height: 13rem;
+  }
+
+  .review-action-bar {
+    position: sticky;
+    bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    z-index: 5;
+    box-shadow: 0 16px 36px rgba(75, 38, 15, 0.14);
+    backdrop-filter: blur(16px);
   }
 }

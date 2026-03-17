@@ -160,20 +160,15 @@
             <audio id="audio-player" class="audio-player" controls></audio>
 
             <div class="review-grid">
-              <div>
+              <div class="review-column">
                 <label class="field-label" for="raw-transcript">Rough phonetic transcript</label>
                 <textarea id="raw-transcript" rows="4" readonly></textarea>
 
                 <label class="field-label" for="corrected-transcript">Corrected Navajo text</label>
                 <textarea id="corrected-transcript" rows="8"></textarea>
-
-                <div class="inline-actions">
-                  <button id="refresh-button" class="button secondary" type="button">Refresh Ideas</button>
-                  <span id="draft-message" class="message"></span>
-                </div>
               </div>
 
-              <div>
+              <div class="review-column">
                  <label class="field-label" for="translation-text">Possible meanings / working English notes</label>
                  <textarea id="translation-text" rows="10"></textarea>
 
@@ -182,7 +177,13 @@
 
                 <label class="field-label" for="topic-tags">Topic tags</label>
                 <input id="topic-tags" type="text" placeholder="water, land, permits" />
+              </div>
+            </div>
 
+            <div class="review-action-bar">
+              <p id="draft-message" class="message"></p>
+              <div class="review-action-buttons">
+                <button id="refresh-button" class="button secondary" type="button">Refresh Ideas</button>
                 <button id="approve-button" class="button" type="button">Approve Final Version</button>
               </div>
             </div>
