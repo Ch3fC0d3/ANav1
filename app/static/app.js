@@ -651,6 +651,7 @@ function renderMeetingSummary(summary) {
 
   const summarySections = [
     ["Main topics", summary?.main_topics || []],
+    ["Possible bigger-picture guesses", summary?.big_picture_guesses || []],
     ["Concerns or requests", summary?.concerns_requests || []],
     ["Decisions or actions", summary?.decisions_actions || []],
     ["Names, places, or numbers", summary?.names_numbers || []],
@@ -686,6 +687,9 @@ function renderMeetingGist(items) {
     const details = (item.important_details || [])
       .map((detail) => String(detail || "").trim())
       .filter(Boolean);
+    const possibleReference = String(item.possible_reference || "").trim();
+    const guessReason = String(item.guess_reason || "").trim();
+    const isInference = Boolean(item.is_inference && possibleReference);
     const start = item.start_seconds;
     const end = item.end_seconds;
     const label =
@@ -700,6 +704,15 @@ function renderMeetingGist(items) {
     const playButton = canPlay
       ? `<button class="button secondary mini-button" type="button" data-play-segment="${escapeHtml(start)}" data-stop-segment="${escapeHtml(end ?? "")}">Play clip</button>`
       : "";
+    const guessBadge = isInference ? `<span class="pill guess">Guess</span>` : "";
+    const guessBlock = isInference
+      ? `
+        <div class="guess-note">
+          <strong>Possible reference:</strong> ${escapeHtml(possibleReference)}
+          ${guessReason ? `<p>${escapeHtml(`Guess based on clues: ${guessReason}`)}</p>` : ""}
+        </div>
+      `
+      : "";
 
     const listItem = document.createElement("li");
     listItem.innerHTML = `
@@ -708,9 +721,13 @@ function renderMeetingGist(items) {
           <strong>${escapeHtml(label)}</strong>
           <p class="helper-copy">${escapeHtml(item.headline || "Possible discussion point")}</p>
         </div>
-        <span class="${confidencePillClass(item.confidence || "low")}">${escapeHtml(item.confidence || "low")}</span>
+        <div class="meeting-pill-row">
+          ${guessBadge}
+          <span class="${confidencePillClass(item.confidence || "low")}">${escapeHtml(item.confidence || "low")}</span>
+        </div>
       </div>
       <p>${escapeHtml(item.gist || "No meeting note yet.")}</p>
+      ${guessBlock}
       ${detailList}
       <div class="meeting-gist-actions">
         ${playButton}

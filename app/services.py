@@ -673,6 +673,9 @@ def _fallback_meeting_gist_for_section(
         "important_details": detail_lines[:4],
         "confidence": "low",
         "draft_explanation": "Built from saved context because AI meeting-note drafting was unavailable.",
+        "possible_reference": "",
+        "guess_reason": "",
+        "is_inference": False,
         "transcript": section.get("transcript", ""),
     }
 
@@ -701,6 +704,8 @@ def _build_meeting_gist_for_section(
                 "Do not give a literal word-for-word translation. "
                 "Instead, provide a short plain-English meeting note about what this section is probably about. "
                 "Use uncertain language when needed, and never invent certainty. "
+                "You may connect multiple clues into a bigger-picture guess, such as a known story, event, or topic. "
+                "If you do that, clearly mark it as a guess, not a fact, and explain which clues support the guess. "
                 "Pull out likely names, places, numbers, requests, or decisions if they seem present. "
                 "Return valid JSON only."
             ),
@@ -716,9 +721,12 @@ def _build_meeting_gist_for_section(
                                 f"Context from the user:\n{context_block}\n\n"
                                 f"Glossary hits:\n{glossary_block}\n\n"
                                 f"Approved examples:\n{memory_block}\n\n"
-                                "Return JSON with keys: headline, gist, important_details, confidence, draft_explanation. "
+                                "Return JSON with keys: headline, gist, important_details, confidence, draft_explanation, possible_reference, guess_reason, is_inference. "
                                 "headline should be 3-8 words. gist should be 1-3 short sentences. "
                                 "important_details should be an array of up to 4 short strings. "
+                                "If several clues point to a known story, event, or topic, set is_inference to true, put the short guessed reference in possible_reference, "
+                                "and explain the clue chain in guess_reason. Use wording like 'possible reference' or 'this may be about'. "
+                                "If there is no strong higher-level guess, set is_inference to false and leave possible_reference and guess_reason empty. "
                                 "Confidence must be one of: low, medium, high."
                             ),
                         }
@@ -741,8 +749,20 @@ def _build_meeting_gist_for_section(
                             },
                             "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
                             "draft_explanation": {"type": "string"},
+                            "possible_reference": {"type": "string"},
+                            "guess_reason": {"type": "string"},
+                            "is_inference": {"type": "boolean"},
                         },
-                        "required": ["headline", "gist", "important_details", "confidence", "draft_explanation"],
+                        "required": [
+                            "headline",
+                            "gist",
+                            "important_details",
+                            "confidence",
+                            "draft_explanation",
+                            "possible_reference",
+                            "guess_reason",
+                            "is_inference",
+                        ],
                         "additionalProperties": False,
                     },
                 }
@@ -761,6 +781,9 @@ def _build_meeting_gist_for_section(
             "important_details": [str(item).strip() for item in payload.get("important_details", []) if str(item).strip()][:4],
             "confidence": payload.get("confidence", "low").strip() or "low",
             "draft_explanation": payload.get("draft_explanation", "").strip(),
+            "possible_reference": payload.get("possible_reference", "").strip(),
+            "guess_reason": payload.get("guess_reason", "").strip(),
+            "is_inference": bool(payload.get("is_inference", False)),
             "transcript": transcript,
         }
     except Exception as exc:
@@ -776,6 +799,21 @@ def _fallback_meeting_summary(
 ) -> dict[str, Any]:
     glossary_hits = glossary_hits or []
     main_topics = [item.get("headline", "").strip() for item in meeting_gist if item.get("headline")]
+    big_picture_guesses: list[str] = []
+    seen_guesses: set[str] = set()
+    for item in meeting_gist:
+        guessed_reference = str(item.get("possible_reference", "")).strip()
+        if not guessed_reference:
+            continue
+        normalized = normalize_text(guessed_reference)
+        if not normalized or normalized in seen_guesses:
+            continue
+        seen_guesses.add(normalized)
+        reason = str(item.get("guess_reason", "")).strip()
+        guess_line = f"Possible reference: {guessed_reference}"
+        if reason:
+            guess_line = f"{guess_line}. Guess based on: {reason}"
+        big_picture_guesses.append(guess_line)
     names_numbers = [
         f"{hit['navajo_term']} = {hit['english_meaning']}"
         for hit in glossary_hits[:4]
@@ -792,6 +830,7 @@ def _fallback_meeting_summary(
 
     return {
         "main_topics": main_topics[:4],
+        "big_picture_guesses": big_picture_guesses[:4],
         "concerns_requests": [],
         "decisions_actions": [],
         "names_numbers": names_numbers[:4],
@@ -816,6 +855,9 @@ def _build_meeting_summary(
                 "gist": item.get("gist", ""),
                 "important_details": item.get("important_details", []),
                 "confidence": item.get("confidence", "low"),
+                "possible_reference": item.get("possible_reference", ""),
+                "guess_reason": item.get("guess_reason", ""),
+                "is_inference": item.get("is_inference", False),
             }
             for item in meeting_gist
         ],
@@ -831,7 +873,8 @@ def _build_meeting_summary(
             model=settings.translation_model,
             instructions=(
                 "You summarize likely meaning from meeting-understanding notes. "
-                "Do not overstate certainty. Keep the output practical for a reviewer who wants to know what the meeting is probably about."
+                "Do not overstate certainty. Keep the output practical for a reviewer who wants to know what the meeting is probably about. "
+                "If the section notes imply a bigger-picture story, event, or topic, list it as a guess and never as a confirmed fact."
             ),
             input=[
                 {
@@ -844,8 +887,9 @@ def _build_meeting_summary(
                                 f"Context from the user:\n{context_block}\n\n"
                                 f"Glossary hits:\n{glossary_block}\n\n"
                                 f"Section notes:\n{note_block}\n\n"
-                                "Return JSON with keys: main_topics, concerns_requests, decisions_actions, names_numbers, overall_takeaway. "
-                                "Each list should contain short strings. Keep overall_takeaway to 1-2 sentences."
+                                "Return JSON with keys: main_topics, big_picture_guesses, concerns_requests, decisions_actions, names_numbers, overall_takeaway. "
+                                "Each list should contain short strings. Keep overall_takeaway to 1-2 sentences. "
+                                "Any higher-level story or topic inference must be labeled as a guess."
                             ),
                         }
                     ],
@@ -860,6 +904,7 @@ def _build_meeting_summary(
                         "type": "object",
                         "properties": {
                             "main_topics": {"type": "array", "items": {"type": "string"}},
+                            "big_picture_guesses": {"type": "array", "items": {"type": "string"}},
                             "concerns_requests": {"type": "array", "items": {"type": "string"}},
                             "decisions_actions": {"type": "array", "items": {"type": "string"}},
                             "names_numbers": {"type": "array", "items": {"type": "string"}},
@@ -867,6 +912,7 @@ def _build_meeting_summary(
                         },
                         "required": [
                             "main_topics",
+                            "big_picture_guesses",
                             "concerns_requests",
                             "decisions_actions",
                             "names_numbers",
@@ -883,6 +929,7 @@ def _build_meeting_summary(
             return _fallback_meeting_summary(meeting_gist, translation_context, glossary_hits)
         return {
             "main_topics": [str(item).strip() for item in payload.get("main_topics", []) if str(item).strip()][:5],
+            "big_picture_guesses": [str(item).strip() for item in payload.get("big_picture_guesses", []) if str(item).strip()][:5],
             "concerns_requests": [str(item).strip() for item in payload.get("concerns_requests", []) if str(item).strip()][:5],
             "decisions_actions": [str(item).strip() for item in payload.get("decisions_actions", []) if str(item).strip()][:5],
             "names_numbers": [str(item).strip() for item in payload.get("names_numbers", []) if str(item).strip()][:5],
@@ -901,6 +948,7 @@ def _compose_meeting_notes_text(meeting_summary: dict[str, Any], meeting_gist: l
 
     section_map = [
         ("Main topics", meeting_summary.get("main_topics", [])),
+        ("Possible bigger-picture guesses", meeting_summary.get("big_picture_guesses", [])),
         ("Concerns or requests", meeting_summary.get("concerns_requests", [])),
         ("Decisions or actions", meeting_summary.get("decisions_actions", [])),
         ("Names, places, or numbers", meeting_summary.get("names_numbers", [])),
@@ -924,6 +972,13 @@ def _compose_meeting_notes_text(meeting_summary: dict[str, Any], meeting_gist: l
             details = [str(detail).strip() for detail in item.get("important_details", []) if str(detail).strip()]
             summary_line = f"- {label}: {gist}".strip()
             lines.append(summary_line)
+            possible_reference = str(item.get("possible_reference", "")).strip()
+            guess_reason = str(item.get("guess_reason", "")).strip()
+            if possible_reference:
+                guess_line = f"  Guess: possible reference is {possible_reference}"
+                if guess_reason:
+                    guess_line = f"{guess_line}. Why guess: {guess_reason}"
+                lines.append(guess_line)
             if details:
                 lines.append(f"  Details: {'; '.join(details[:3])}")
 
