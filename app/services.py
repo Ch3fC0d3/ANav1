@@ -104,14 +104,18 @@ def find_memory_hits(transcript: str, approved_examples: list[dict[str, Any]], l
 
 
 def _build_transcription_prompt(glossary_entries: list[dict[str, Any]]) -> str:
-    glossary_terms = ", ".join(entry["navajo_term"] for entry in glossary_entries[:20])
-    base = (
-        "The audio may contain Navajo (Dine Bizaad). Produce a rough, phonetic transcript. "
-        "Preserve place names, project terms, and repeated words as carefully as possible."
-    )
-    if glossary_terms:
-        return f"{base} Known terms: {glossary_terms}."
-    return base
+    terms: list[str] = []
+    seen: set[str] = set()
+    for entry in glossary_entries[:30]:
+        term = entry["navajo_term"].strip()
+        if not term:
+            continue
+        normalized = normalize_text(term)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        terms.append(term)
+    return ", ".join(terms)
 
 
 def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], list[str]]:
@@ -122,9 +126,11 @@ def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -
     request_kwargs: dict[str, Any] = {
         "model": settings.transcription_model,
         "response_format": "verbose_json",
-        "prompt": _build_transcription_prompt(glossary_entries),
         "timestamp_granularities": ["word"],
     }
+    prompt = _build_transcription_prompt(glossary_entries)
+    if prompt:
+        request_kwargs["prompt"] = prompt
     if settings.transcription_language:
         request_kwargs["language"] = settings.transcription_language
 
