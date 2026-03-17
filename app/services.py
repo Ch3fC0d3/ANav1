@@ -121,7 +121,12 @@ def find_memory_hits(transcript: str, approved_examples: list[dict[str, Any]], l
 
 
 def _build_transcription_prompt(glossary_entries: list[dict[str, Any]]) -> str:
-    terms: list[str] = []
+    terms: list[str] = [
+        (
+            "Navajo-language audio. Transcribe the speech phonetically using plain English letters. "
+            "Do not translate into English. If speech is unclear, keep approximate sounds instead of inventing English phrases."
+        )
+    ]
     seen: set[str] = set()
     for entry in glossary_entries[:30]:
         term = entry["navajo_term"].strip()
