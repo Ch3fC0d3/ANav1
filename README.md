@@ -57,6 +57,25 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 - `MAX_UPLOAD_MB`: defaults to `25`
 - `SAMPLE_AUDIO_PATH`: optional absolute path for a one-click local sample file button
 
+## Railway deploy
+
+The repo includes `railway.json`, so Railway has an explicit FastAPI start command and healthcheck path.
+
+After connecting the GitHub repo in Railway, make sure you also:
+
+1. Add `OPENAI_API_KEY` in the Railway service `Variables` tab.
+2. Add a volume mounted at `/app/data` so SQLite and uploaded audio persist across deploys.
+3. Generate a public domain in `Networking` if you want the app reachable from the web.
+
+Optional Railway variables:
+
+- `OPENAI_TRANSCRIPTION_MODEL`
+- `OPENAI_TRANSLATION_MODEL`
+- `OPENAI_TRANSCRIPTION_CHUNK_SECONDS`
+- `MAX_UPLOAD_MB`
+
+Leave `SAMPLE_AUDIO_PATH` blank on Railway unless that file exists inside the deployed container.
+
 ## Workflow
 
 1. Capture or upload audio.
