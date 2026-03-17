@@ -1,0 +1,69 @@
+# ANav1
+
+ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets you upload or record audio, generate a rough Whisper transcript, draft an English translation with project memory, and approve the final version so future suggestions improve over time.
+
+## What it does
+
+- Upload audio from phone or desktop
+- Record audio in the browser when supported
+- Transcribe speech into rough Navajo text with `whisper-1`
+- Draft an English meaning using:
+  - glossary matches
+  - similar approved phrases
+  - an OpenAI text model
+- Let a human reviewer correct the Navajo transcript and English translation
+- Save approved pairs as reusable project memory
+
+## Stack
+
+- FastAPI
+- SQLite
+- Vanilla HTML/CSS/JS
+- OpenAI API for transcription and translation assist
+
+## Quick start
+
+1. Create a virtual environment and install dependencies:
+
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   ```
+
+2. Copy `.env.example` to `.env` and add your OpenAI API key:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+3. Start the app:
+
+   ```powershell
+   uvicorn app.main:app --reload
+   ```
+
+4. Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+## Environment variables
+
+- `OPENAI_API_KEY`: required for automatic transcription and AI draft translation
+- `OPENAI_TRANSCRIPTION_MODEL`: defaults to `whisper-1`
+- `OPENAI_TRANSLATION_MODEL`: defaults to `gpt-4o-mini`
+- `OPENAI_TRANSCRIPTION_LANGUAGE`: optional; leave blank to let the model detect language
+- `MAX_UPLOAD_MB`: defaults to `25`
+
+## Workflow
+
+1. Capture or upload audio.
+2. Review the rough Whisper transcript.
+3. Edit the Navajo text if needed.
+4. Refresh the AI draft translation after edits.
+5. Approve the final English meaning.
+6. Reuse approved phrases and glossary entries on future clips.
+
+## Notes
+
+- Without `OPENAI_API_KEY`, the app still opens and stores sessions, but transcript and AI draft generation are manual.
+- Approved phrases are stored locally in `data/app.db`.
+- Uploaded audio files are stored in `data/uploads/`.

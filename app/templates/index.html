@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">Human-guided Navajo translation memory</p>
+          <h1>{{ app_name }}</h1>
+          <p class="lede">
+            Capture speech, generate a rough Whisper transcript, draft an English meaning, then
+            approve the final version so the system learns your dialect and project vocabulary.
+          </p>
+        </div>
+        <div class="hero-status">
+          <div class="status-card">
+            <span class="status-label">OpenAI</span>
+            <strong class="{{ 'status-on' if openai_configured else 'status-off' }}">
+              {{ 'Configured' if openai_configured else 'Not configured' }}
+            </strong>
+            <p>
+              {% if openai_configured %}
+              Upload audio to transcribe and draft translations.
+              {% else %}
+              The app still works for manual review, but automatic transcription needs
+              <code>OPENAI_API_KEY</code>.
+              {% endif %}
+            </p>
+          </div>
+          <div class="status-card muted">
+            <span class="status-label">Upload limit</span>
+            <strong>{{ max_upload_mb }} MB</strong>
+            <p>Best for interviews, field notes, and short review clips.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <section class="main-column">
+          <section class="panel capture-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 1</p>
+                <h2>Capture Speech</h2>
+              </div>
+              <p class="helper-copy">Record in-browser or upload from phone.</p>
+            </div>
+
+            <div class="capture-grid">
+              <div class="capture-box">
+                <label class="field-label" for="audio-file">Upload audio</label>
+                <input id="audio-file" type="file" accept="audio/*" capture />
+                <p class="helper-copy">Accepted: MP3, M4A, WAV, WEBM, OGG</p>
+              </div>
+              <div class="capture-box">
+                <label class="field-label">Browser recorder</label>
+                <div class="recorder-actions">
+                  <button id="record-toggle" class="button secondary" type="button">Start recording</button>
+                  <span id="recording-state" class="recording-state">Idle</span>
+                </div>
+                <p class="helper-copy">Works best in mobile browsers with microphone access enabled.</p>
+              </div>
+            </div>
+
+            <div class="capture-actions">
+              <button id="upload-button" class="button" type="button">Transcribe Audio</button>
+              <p id="capture-message" class="message"></p>
+            </div>
+          </section>
+
+          <section class="panel review-panel" id="review-panel" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Steps 2-5</p>
+                <h2>Review And Approve</h2>
+              </div>
+              <div class="badge-row">
+                <span id="confidence-badge" class="pill">Confidence: low</span>
+                <span id="status-badge" class="pill muted">Needs review</span>
+              </div>
+            </div>
+
+            <audio id="audio-player" class="audio-player" controls></audio>
+
+            <div class="review-grid">
+              <div>
+                <label class="field-label" for="raw-transcript">Whisper transcript</label>
+                <textarea id="raw-transcript" rows="4" readonly></textarea>
+
+                <label class="field-label" for="corrected-transcript">Corrected Navajo text</label>
+                <textarea id="corrected-transcript" rows="8"></textarea>
+
+                <div class="inline-actions">
+                  <button id="refresh-button" class="button secondary" type="button">Refresh AI Draft</button>
+                  <span id="draft-message" class="message"></span>
+                </div>
+              </div>
+
+              <div>
+                <label class="field-label" for="translation-text">Draft / final English meaning</label>
+                <textarea id="translation-text" rows="10"></textarea>
+
+                <label class="field-label" for="translation-notes">Notes for reviewers</label>
+                <textarea id="translation-notes" rows="3" placeholder="Context, speaker notes, uncertainties, place names..."></textarea>
+
+                <label class="field-label" for="topic-tags">Topic tags</label>
+                <input id="topic-tags" type="text" placeholder="water, land, permits" />
+
+                <button id="approve-button" class="button" type="button">Approve Final Version</button>
+              </div>
+            </div>
+
+            <div class="insight-grid">
+              <div class="insight-card">
+                <h3>AI explanation</h3>
+                <p id="draft-explanation" class="helper-copy"></p>
+                <ul id="warning-list" class="chip-list warning-list"></ul>
+              </div>
+              <div class="insight-card">
+                <h3>Glossary hits</h3>
+                <ul id="glossary-hit-list" class="chip-list"></ul>
+              </div>
+              <div class="insight-card">
+                <h3>Similar approved phrases</h3>
+                <ul id="example-hit-list" class="example-list"></ul>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Project Memory</p>
+                <h2>Glossary</h2>
+              </div>
+            </div>
+
+            <form id="glossary-form" class="glossary-form">
+              <input id="glossary-term" type="text" placeholder="Navajo term" required />
+              <input id="glossary-meaning" type="text" placeholder="English meaning" required />
+              <textarea id="glossary-notes" rows="2" placeholder="Notes or domain context"></textarea>
+              <button class="button secondary" type="submit">Add Glossary Entry</button>
+            </form>
+
+            <ul id="glossary-list" class="stack-list"></ul>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Learn</p>
+                <h2>Approved Memory</h2>
+              </div>
+            </div>
+            <ul id="approved-list" class="stack-list"></ul>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Recent Work</p>
+                <h2>Sessions</h2>
+              </div>
+            </div>
+            <ul id="recent-list" class="stack-list"></ul>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
