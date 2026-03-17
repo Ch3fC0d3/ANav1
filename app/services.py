@@ -383,6 +383,181 @@ def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -
     return "\n\n".join(transcript_chunks), words, warnings
 
 
+def _split_text_block(value: str, target_chars: int) -> list[str]:
+    words = value.split()
+    if not words:
+        return []
+
+    parts: list[str] = []
+    current_words: list[str] = []
+    current_length = 0
+
+    for word in words:
+        extra = len(word) if not current_words else len(word) + 1
+        if current_words and current_length + extra > target_chars:
+            parts.append(" ".join(current_words))
+            current_words = [word]
+            current_length = len(word)
+            continue
+        current_words.append(word)
+        current_length += extra
+
+    if current_words:
+        parts.append(" ".join(current_words))
+    return parts
+
+
+def _split_transcript_for_translation(transcript: str, target_chars: int = 700) -> list[str]:
+    blocks = [block.strip() for block in re.split(r"\n{2,}", transcript) if block.strip()]
+    if not blocks:
+        stripped = transcript.strip()
+        return [stripped] if stripped else []
+
+    sections: list[str] = []
+    current_blocks: list[str] = []
+    current_length = 0
+
+    for block in blocks:
+        block_parts = _split_text_block(block, target_chars) if len(block) > target_chars else [block]
+        for part in block_parts:
+            extra = len(part) if not current_blocks else len(part) + 2
+            if current_blocks and current_length + extra > target_chars:
+                sections.append("\n\n".join(current_blocks))
+                current_blocks = [part]
+                current_length = len(part)
+                continue
+
+            current_blocks.append(part)
+            current_length += extra
+
+    if current_blocks:
+        sections.append("\n\n".join(current_blocks))
+    return sections
+
+
+def _filter_glossary_hits_for_section(section: str, glossary_hits: list[dict[str, Any]], limit: int = 6) -> list[dict[str, Any]]:
+    normalized_section = normalize_text(section)
+    section_tokens = set(tokenize(section))
+    matches: list[dict[str, Any]] = []
+
+    for hit in glossary_hits:
+        term = normalize_text(hit.get("navajo_term", ""))
+        if not term:
+            continue
+        term_tokens = set(tokenize(hit.get("navajo_term", "")))
+        if term in normalized_section or (term_tokens and term_tokens.issubset(section_tokens)):
+            matches.append(hit)
+        if len(matches) >= limit:
+            break
+
+    return matches
+
+
+def _filter_memory_hits_for_section(section: str, memory_hits: list[dict[str, Any]], limit: int = 3) -> list[dict[str, Any]]:
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for hit in memory_hits:
+        source_text = hit.get("corrected_transcript") or ""
+        score = _similarity_score(section, source_text)
+        if score < 0.08:
+            continue
+        ranked.append((score, hit))
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in ranked[:limit]]
+
+
+def _combine_confidence_levels(levels: list[str]) -> str:
+    if not levels:
+        return "low"
+    if "low" in levels:
+        return "low"
+    if "medium" in levels:
+        return "medium"
+    return "high"
+
+
+def _build_translation_draft_single(
+    transcript: str,
+    glossary_hits: list[dict[str, Any]],
+    memory_hits: list[dict[str, Any]],
+    translation_context: str = "",
+    section_label: str = "",
+) -> dict[str, str]:
+    if not settings.openai_configured or not transcript.strip():
+        return fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
+
+    glossary_block = json.dumps(glossary_hits, ensure_ascii=False, indent=2)
+    memory_block = json.dumps(memory_hits, ensure_ascii=False, indent=2)
+    context_block = translation_context.strip() or "No extra context provided."
+    scoped_label = section_label or "this transcript section"
+
+    try:
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.responses.create(
+            model=settings.translation_model,
+            instructions=(
+                "You assist with Navajo-to-English translation review. "
+                "The user does not want an exact final translation. "
+                "They want possible meanings, working interpretations, and idea sketches. "
+                "Use the provided context, glossary, and approved examples as hints. "
+                "Be explicit about uncertainty, avoid overclaiming, and never invent certainty. "
+                "Cover the full section you are given, not just the opening sentence. "
+                "Return valid JSON only."
+            ),
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                f"Create draft English meaning ideas for {scoped_label} below.\n\n"
+                                f"Transcript section:\n{transcript}\n\n"
+                                f"Context from the user:\n{context_block}\n\n"
+                                f"Glossary hits:\n{glossary_block}\n\n"
+                                f"Approved examples:\n{memory_block}\n\n"
+                                "Return JSON with keys: draft_translation, confidence, draft_explanation. "
+                                "Make draft_translation cover the full section in 2-5 short lines or sentences. "
+                                "These should be possible meanings or translation ideas, not a final answer. "
+                                "Confidence must be one of: low, medium, high."
+                            ),
+                        }
+                    ],
+                }
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "translation_assist",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "draft_translation": {"type": "string"},
+                            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                            "draft_explanation": {"type": "string"},
+                        },
+                        "required": ["draft_translation", "confidence", "draft_explanation"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+        )
+
+        payload = json.loads(getattr(response, "output_text", "").strip() or "{}")
+        if not payload:
+            return fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
+        return {
+            "draft_translation": payload.get("draft_translation", "").strip(),
+            "confidence": payload.get("confidence", "low").strip() or "low",
+            "draft_explanation": payload.get("draft_explanation", "").strip(),
+        }
+    except Exception as exc:
+        draft = fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
+        draft["draft_explanation"] = f"{draft['draft_explanation']} AI draft failed: {exc}"
+        return draft
+
+
 def fallback_translation_draft(
     transcript: str,
     glossary_hits: list[dict[str, Any]],
@@ -422,70 +597,39 @@ def build_translation_draft(
     if not settings.openai_configured or not transcript.strip():
         return fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
 
-    glossary_block = json.dumps(glossary_hits, ensure_ascii=False, indent=2)
-    memory_block = json.dumps(memory_hits, ensure_ascii=False, indent=2)
-    context_block = translation_context.strip() or "No extra context provided."
-
-    try:
-        client = OpenAI(api_key=settings.openai_api_key)
-        response = client.responses.create(
-            model=settings.translation_model,
-            instructions=(
-                "You assist with Navajo-to-English translation review. "
-                "The user does not want an exact final translation. "
-                "They want possible meanings, working interpretations, and idea sketches. "
-                "Use the provided context, glossary, and approved examples as hints. "
-                "Be explicit about uncertainty, avoid overclaiming, and never invent certainty. "
-                "Return valid JSON only."
-            ),
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": (
-                                "Create a draft English translation for the Navajo transcript below.\n\n"
-                                f"Transcript:\n{transcript}\n\n"
-                                f"Context from the user:\n{context_block}\n\n"
-                                f"Glossary hits:\n{glossary_block}\n\n"
-                                f"Approved examples:\n{memory_block}\n\n"
-                                "Return JSON with keys: draft_translation, confidence, draft_explanation. "
-                                "Make draft_translation a short set of possible meanings or translation ideas, not a final answer. "
-                                "Confidence must be one of: low, medium, high."
-                            ),
-                        }
-                    ],
-                }
-            ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "translation_assist",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "draft_translation": {"type": "string"},
-                            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-                            "draft_explanation": {"type": "string"},
-                        },
-                        "required": ["draft_translation", "confidence", "draft_explanation"],
-                        "additionalProperties": False,
-                    },
-                }
-            },
+    sections = _split_transcript_for_translation(transcript)
+    if len(sections) <= 1:
+        return _build_translation_draft_single(
+            transcript,
+            glossary_hits,
+            memory_hits,
+            translation_context,
+            section_label="this transcript",
         )
 
-        payload = json.loads(getattr(response, "output_text", "").strip() or "{}")
-        if not payload:
-            return fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
-        return {
-            "draft_translation": payload.get("draft_translation", "").strip(),
-            "confidence": payload.get("confidence", "low").strip() or "low",
-            "draft_explanation": payload.get("draft_explanation", "").strip(),
-        }
-    except Exception as exc:
-        draft = fallback_translation_draft(transcript, glossary_hits, memory_hits, translation_context)
-        draft["draft_explanation"] = f"{draft['draft_explanation']} AI draft failed: {exc}"
-        return draft
+    section_outputs: list[str] = []
+    section_explanations: list[str] = []
+    confidences: list[str] = []
+
+    for index, section in enumerate(sections, start=1):
+        section_glossary_hits = _filter_glossary_hits_for_section(section, glossary_hits)
+        section_memory_hits = _filter_memory_hits_for_section(section, memory_hits)
+        draft = _build_translation_draft_single(
+            section,
+            section_glossary_hits,
+            section_memory_hits,
+            translation_context,
+            section_label=f"section {index} of {len(sections)}",
+        )
+        section_outputs.append(f"Section {index}\n{draft['draft_translation'].strip()}")
+        section_explanations.append(f"Section {index}: {draft['draft_explanation'].strip()}")
+        confidences.append(draft.get("confidence", "low").strip() or "low")
+
+    return {
+        "draft_translation": "\n\n".join(section_outputs).strip(),
+        "confidence": _combine_confidence_levels(confidences),
+        "draft_explanation": (
+            f"Draft ideas were generated section by section across {len(sections)} transcript sections.\n\n"
+            + "\n".join(section_explanations)
+        ).strip(),
+    }

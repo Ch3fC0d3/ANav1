@@ -98,7 +98,7 @@ const PROCESS_SNAPSHOTS = {
     title: "Translating",
     pill: "Translating",
     pillClass: "pill active",
-    message: "Drafting English ideas...",
+    message: "Drafting English ideas section by section...",
   },
   done: {
     title: "Done",
@@ -682,8 +682,8 @@ async function runProcessingPipeline(recording, sourceLabel) {
     return;
   }
 
-  renderProcessing("translating", "Drafting English ideas...", transcribed.recording);
-  setMessage(elements.captureMessage, "Drafting translation ideas...");
+  renderProcessing("translating", "Drafting English ideas section by section...", transcribed.recording);
+  setMessage(elements.captureMessage, "Drafting translation ideas section by section...");
   const drafted = await fetchJson(`/api/recordings/${recording.id}/draft-translation`, { method: "POST" });
   renderRecording(drafted.recording);
   setMessage(
@@ -754,8 +754,8 @@ async function refreshDraft() {
   }
 
   elements.refreshButton.disabled = true;
-  renderProcessing("translating", "Refreshing English ideas...", state.currentRecording);
-  setMessage(elements.draftMessage, "Refreshing translation ideas...");
+  renderProcessing("translating", "Refreshing English ideas section by section...", state.currentRecording);
+  setMessage(elements.draftMessage, "Refreshing translation ideas section by section...");
   try {
     const payload = await fetchJson(`/api/recordings/${state.currentRecording.id}/refresh-draft`, {
       method: "POST",

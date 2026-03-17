@@ -258,7 +258,7 @@ async def draft_translation(recording_id: str):
         recording_id,
         {
             "processing_stage": "translating",
-            "processing_message": f"Drafting English ideas with {settings.translation_model}...",
+            "processing_message": f"Drafting English ideas section by section with {settings.translation_model}...",
         },
     )
 
