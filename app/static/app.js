@@ -437,17 +437,43 @@ async function startMicMonitor(stream) {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...options.headers,
-    },
-    ...options,
-  });
-  const payload = await response.json().catch(() => ({}));
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...options.headers,
+      },
+      ...options,
+    });
+  } catch (error) {
+    throw new Error("Network error. The app could not reach the server.");
+  }
+
+  const responseText = await response.text();
+  let payload = {};
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      payload = {
+        rawText: responseText
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim(),
+      };
+    }
+  }
+
   if (!response.ok) {
-    throw new Error(payload.detail || "Request failed");
+    const detail =
+      payload.detail ||
+      payload.message ||
+      payload.rawText ||
+      response.statusText ||
+      "Request failed";
+    throw new Error(`HTTP ${response.status}: ${String(detail).slice(0, 180)}`);
   }
   return payload;
 }
