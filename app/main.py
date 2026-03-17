@@ -145,33 +145,99 @@ async def create_recording_endpoint(file: UploadFile = File(...)):
     with stored_path.open("wb") as output_file:
         output_file.write(file_bytes)
 
-    glossary_entries = list_glossary()
-    transcript, transcript_words, warnings = transcribe_audio(stored_path, glossary_entries)
-    corrected_transcript = transcript
-    approved_examples = list_approved_memories(limit=40)
-    glossary_hits = find_glossary_hits(corrected_transcript, glossary_entries)
-    example_hits = find_memory_hits(corrected_transcript, approved_examples)
-    draft = build_translation_draft(corrected_transcript, glossary_hits, example_hits)
-
     recording = create_recording(
         {
             "id": recording_id,
             "original_filename": file.filename or stored_path.name,
             "audio_path": str(stored_path),
             "mime_type": file.content_type or "audio/mpeg",
+            "status": "needs_review",
+            "processing_stage": "uploaded",
+            "processing_message": "Audio uploaded. Ready to transcribe.",
+        }
+    )
+    return {"recording": serialize_recording(recording)}
+
+
+@app.post("/api/recordings/{recording_id}/transcribe")
+async def transcribe_recording(recording_id: str):
+    recording = get_recording(recording_id)
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found.")
+
+    update_recording(
+        recording_id,
+        {
+            "processing_stage": "transcribing",
+            "processing_message": f"Transcribing audio with {settings.transcription_model}...",
+        },
+    )
+
+    glossary_entries = list_glossary()
+    transcript, transcript_words, warnings = transcribe_audio(Path(recording["audio_path"]), glossary_entries)
+    has_transcript = bool(transcript.strip())
+    processing_stage = "transcribed" if has_transcript else "error"
+    processing_message = (
+        "Phonetic transcript ready. Review and correct it."
+        if has_transcript
+        else (warnings[0] if warnings else "Transcription finished, but no transcript was produced.")
+    )
+
+    updated = update_recording(
+        recording_id,
+        {
             "raw_transcript": transcript,
-            "corrected_transcript": corrected_transcript,
+            "corrected_transcript": transcript,
+            "transcript_words": transcript_words,
+            "warnings": warnings,
+            "processing_stage": processing_stage,
+            "processing_message": processing_message,
+        },
+    )
+    return {"recording": serialize_recording(updated)}
+
+
+@app.post("/api/recordings/{recording_id}/draft-translation")
+async def draft_translation(recording_id: str):
+    recording = get_recording(recording_id)
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found.")
+
+    transcript_source = (recording.get("corrected_transcript") or recording.get("raw_transcript") or "").strip()
+    update_recording(
+        recording_id,
+        {
+            "processing_stage": "translating",
+            "processing_message": f"Drafting English translation with {settings.translation_model}...",
+        },
+    )
+
+    glossary_entries = list_glossary()
+    approved_examples = list_approved_memories(limit=40)
+    glossary_hits = find_glossary_hits(transcript_source, glossary_entries)
+    example_hits = find_memory_hits(transcript_source, approved_examples)
+    draft = build_translation_draft(transcript_source, glossary_hits, example_hits)
+
+    processing_message = (
+        "Draft translation ready for review."
+        if transcript_source
+        else "Processing finished, but the transcript still needs to be entered or corrected manually."
+    )
+
+    updated = update_recording(
+        recording_id,
+        {
+            "corrected_transcript": transcript_source,
             "draft_translation": draft["draft_translation"],
             "confidence": draft["confidence"],
             "draft_explanation": draft["draft_explanation"],
             "glossary_hits": glossary_hits,
             "example_hits": example_hits,
-            "transcript_words": transcript_words,
-            "warnings": warnings,
-            "status": "needs_review",
-        }
+            "processing_stage": "done",
+            "processing_message": processing_message,
+        },
     )
-    return {"recording": serialize_recording(recording)}
+    return {"recording": serialize_recording(updated)}
 
 
 @app.post("/api/recordings/{recording_id}/refresh-draft")
@@ -194,6 +260,8 @@ async def refresh_draft(recording_id: str, request: DraftRefreshRequest):
             "draft_explanation": draft["draft_explanation"],
             "glossary_hits": glossary_hits,
             "example_hits": example_hits,
+            "processing_stage": "done",
+            "processing_message": "Draft translation ready for review.",
         },
     )
     return {"recording": serialize_recording(updated)}
@@ -213,6 +281,8 @@ async def approve_recording(recording_id: str, request: ApprovalRequest):
             "translation_notes": request.translation_notes.strip(),
             "topic_tags": request.topic_tags.strip(),
             "status": "approved",
+            "processing_stage": "approved",
+            "processing_message": "Approved and saved to project memory.",
             "approved_at": datetime.now(timezone.utc).isoformat(),
         },
     )

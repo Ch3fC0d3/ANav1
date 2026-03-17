@@ -6,7 +6,7 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 
 - Upload audio from phone or desktop
 - Record audio in the browser when supported
-- Transcribe speech into rough Navajo text with `whisper-1`
+- Transcribe speech into rough Navajo phonetic text with `gpt-4o-transcribe`
 - Draft an English meaning using:
   - glossary matches
   - similar approved phrases
@@ -48,7 +48,7 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 ## Environment variables
 
 - `OPENAI_API_KEY`: required for automatic transcription and AI draft translation
-- `OPENAI_TRANSCRIPTION_MODEL`: defaults to `whisper-1`
+- `OPENAI_TRANSCRIPTION_MODEL`: defaults to `gpt-4o-transcribe`
 - `OPENAI_TRANSLATION_MODEL`: defaults to `gpt-4o-mini`
 - `OPENAI_TRANSCRIPTION_LANGUAGE`: optional; leave blank to let the model detect language
 - `MAX_UPLOAD_MB`: defaults to `25`

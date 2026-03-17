@@ -58,6 +58,8 @@ def init_db() -> None:
                 example_hits_json TEXT NOT NULL DEFAULT '[]',
                 transcript_words_json TEXT NOT NULL DEFAULT '[]',
                 warnings_json TEXT NOT NULL DEFAULT '[]',
+                processing_stage TEXT NOT NULL DEFAULT 'idle',
+                processing_message TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 approved_at TEXT
@@ -67,6 +69,24 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings (created_at DESC);
             """
         )
+        _ensure_recording_columns(
+            connection,
+            {
+                "processing_stage": "TEXT NOT NULL DEFAULT 'idle'",
+                "processing_message": "TEXT NOT NULL DEFAULT ''",
+            },
+        )
+
+
+def _ensure_recording_columns(connection: sqlite3.Connection, columns: dict[str, str]) -> None:
+    existing = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(recordings)").fetchall()
+    }
+    for column_name, column_def in columns.items():
+        if column_name in existing:
+            continue
+        connection.execute(f"ALTER TABLE recordings ADD COLUMN {column_name} {column_def}")
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -78,6 +98,8 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     item["example_hits"] = json.loads(item.pop("example_hits_json", "[]"))
     item["transcript_words"] = json.loads(item.pop("transcript_words_json", "[]"))
     item["warnings"] = json.loads(item.pop("warnings_json", "[]"))
+    item.setdefault("processing_stage", "idle")
+    item.setdefault("processing_message", "")
     return item
 
 
@@ -137,11 +159,13 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 example_hits_json,
                 transcript_words_json,
                 warnings_json,
+                processing_stage,
+                processing_message,
                 created_at,
                 updated_at,
                 approved_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["id"],
@@ -161,6 +185,8 @@ def create_recording(payload: dict[str, Any]) -> dict[str, Any]:
                 json.dumps(payload.get("example_hits", [])),
                 json.dumps(payload.get("transcript_words", [])),
                 json.dumps(payload.get("warnings", [])),
+                payload.get("processing_stage", "idle"),
+                payload.get("processing_message", ""),
                 timestamp,
                 timestamp,
                 payload.get("approved_at"),

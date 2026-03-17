@@ -18,7 +18,7 @@ class Settings:
     uploads_dir: Path = ROOT_DIR / "data" / "uploads"
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "25"))
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "").strip()
-    transcription_model: str = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1").strip()
+    transcription_model: str = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe").strip()
     translation_model: str = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini").strip()
     transcription_language: str = os.getenv("OPENAI_TRANSCRIPTION_LANGUAGE", "").strip()
 

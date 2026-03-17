@@ -71,6 +71,33 @@
               <button id="upload-button" class="button" type="button">Transcribe Audio</button>
               <p id="capture-message" class="message"></p>
             </div>
+
+            <div class="process-panel">
+              <div class="process-header">
+                <div>
+                  <p class="eyebrow">Live Status</p>
+                  <h3 id="process-title">Ready</h3>
+                </div>
+                <span id="process-pill" class="pill muted">Idle</span>
+              </div>
+              <p id="process-message" class="helper-copy">
+                Pick a file or record audio to begin.
+              </p>
+              <div class="progress-steps">
+                <div class="progress-step" data-step="upload">
+                  <span class="step-dot"></span>
+                  <span>Upload</span>
+                </div>
+                <div class="progress-step" data-step="transcribe">
+                  <span class="step-dot"></span>
+                  <span>Transcribe</span>
+                </div>
+                <div class="progress-step" data-step="translate">
+                  <span class="step-dot"></span>
+                  <span>Translate</span>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section class="panel review-panel" id="review-panel" hidden>

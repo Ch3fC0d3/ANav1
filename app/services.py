@@ -136,11 +136,15 @@ def transcribe_audio(audio_path: Path, glossary_entries: list[dict[str, Any]]) -
         return "", [], ["OpenAI API key not configured. Add the transcript manually, then refresh the draft translation."]
 
     client = OpenAI(api_key=settings.openai_api_key)
+    model_name = settings.transcription_model
     request_kwargs: dict[str, Any] = {
-        "model": settings.transcription_model,
-        "response_format": "verbose_json",
-        "timestamp_granularities": ["word"],
+        "model": model_name,
     }
+    if model_name == "whisper-1":
+        request_kwargs["response_format"] = "verbose_json"
+        request_kwargs["timestamp_granularities"] = ["word"]
+    else:
+        request_kwargs["response_format"] = "json"
     prompt = _build_transcription_prompt(glossary_entries)
     if prompt:
         request_kwargs["prompt"] = prompt

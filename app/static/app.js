@@ -4,6 +4,7 @@ const state = {
   selectedFile: null,
   mediaRecorder: null,
   recordedChunks: [],
+  processingStage: "idle",
 };
 
 const elements = {
@@ -35,6 +36,73 @@ const elements = {
   glossaryNotes: document.getElementById("glossary-notes"),
   recordToggle: document.getElementById("record-toggle"),
   recordingState: document.getElementById("recording-state"),
+  processTitle: document.getElementById("process-title"),
+  processPill: document.getElementById("process-pill"),
+  processMessage: document.getElementById("process-message"),
+  progressSteps: Array.from(document.querySelectorAll(".progress-step")),
+};
+
+const PROCESS_SNAPSHOTS = {
+  idle: {
+    title: "Ready",
+    pill: "Idle",
+    pillClass: "pill muted",
+    message: "Pick a file or record audio to begin.",
+  },
+  listening: {
+    title: "Listening",
+    pill: "Listening",
+    pillClass: "pill active",
+    message: "Listening to the microphone...",
+  },
+  uploading: {
+    title: "Uploading",
+    pill: "Uploading",
+    pillClass: "pill active",
+    message: "Uploading audio to the app...",
+  },
+  uploaded: {
+    title: "Uploaded",
+    pill: "Uploaded",
+    pillClass: "pill active",
+    message: "Audio uploaded. Ready to transcribe.",
+  },
+  transcribing: {
+    title: "Transcribing",
+    pill: "Transcribing",
+    pillClass: "pill active",
+    message: "Turning audio into a rough phonetic transcript...",
+  },
+  transcribed: {
+    title: "Transcript Ready",
+    pill: "Transcript Ready",
+    pillClass: "pill active",
+    message: "Phonetic transcript is ready. Preparing translation context...",
+  },
+  translating: {
+    title: "Translating",
+    pill: "Translating",
+    pillClass: "pill active",
+    message: "Drafting the English translation...",
+  },
+  done: {
+    title: "Done",
+    pill: "Done",
+    pillClass: "pill success",
+    message: "Draft translation ready for review.",
+  },
+  approved: {
+    title: "Approved",
+    pill: "Approved",
+    pillClass: "pill success",
+    message: "Approved and saved to project memory.",
+  },
+  error: {
+    title: "Needs Attention",
+    pill: "Error",
+    pillClass: "pill error",
+    message: "Processing stopped before it finished cleanly.",
+  },
 };
 
 function setMessage(element, message) {
@@ -55,6 +123,75 @@ async function fetchJson(url, options = {}) {
     throw new Error(payload.detail || "Request failed");
   }
   return payload;
+}
+
+function stepStateMap(stage, recording = state.currentRecording) {
+  const stepStates = {
+    upload: "pending",
+    transcribe: "pending",
+    translate: "pending",
+  };
+
+  switch (stage) {
+    case "uploading":
+      stepStates.upload = "active";
+      break;
+    case "uploaded":
+      stepStates.upload = "complete";
+      break;
+    case "transcribing":
+      stepStates.upload = "complete";
+      stepStates.transcribe = "active";
+      break;
+    case "transcribed":
+      stepStates.upload = "complete";
+      stepStates.transcribe = "complete";
+      break;
+    case "translating":
+      stepStates.upload = "complete";
+      stepStates.transcribe = "complete";
+      stepStates.translate = "active";
+      break;
+    case "done":
+    case "approved":
+      stepStates.upload = "complete";
+      stepStates.transcribe = "complete";
+      stepStates.translate = "complete";
+      break;
+    case "error":
+      if (recording?.raw_transcript?.trim()) {
+        stepStates.upload = "complete";
+        stepStates.transcribe = "complete";
+        stepStates.translate = "error";
+      } else if (recording) {
+        stepStates.upload = "complete";
+        stepStates.transcribe = "error";
+      } else {
+        stepStates.upload = "error";
+      }
+      break;
+    default:
+      break;
+  }
+
+  return stepStates;
+}
+
+function renderProcessing(stage, message = "", recording = state.currentRecording) {
+  const normalizedStage = PROCESS_SNAPSHOTS[stage] ? stage : "idle";
+  const snapshot = PROCESS_SNAPSHOTS[normalizedStage];
+  const resolvedMessage = message || snapshot.message;
+  const stepStates = stepStateMap(normalizedStage, recording);
+
+  state.processingStage = normalizedStage;
+  elements.processTitle.textContent = snapshot.title;
+  elements.processPill.textContent = snapshot.pill;
+  elements.processPill.className = snapshot.pillClass;
+  elements.processMessage.textContent = resolvedMessage;
+
+  elements.progressSteps.forEach((step) => {
+    step.dataset.state = stepStates[step.dataset.step] || "pending";
+  });
 }
 
 function renderGlossary(entries) {
@@ -94,6 +231,13 @@ function renderApprovedList(entries) {
   });
 }
 
+function displaySessionState(entry) {
+  if (entry.status === "approved") {
+    return "approved";
+  }
+  return entry.processing_stage || entry.status || "needs_review";
+}
+
 function renderRecentList(entries) {
   elements.recentList.innerHTML = "";
   if (!entries.length) {
@@ -106,7 +250,7 @@ function renderRecentList(entries) {
     item.innerHTML = `
       <strong>${escapeHtml(entry.original_filename)}</strong>
       <p>${escapeHtml((entry.corrected_transcript || entry.raw_transcript || "Transcript pending").slice(0, 120))}</p>
-      <p class="helper-copy">${escapeHtml(entry.status)}</p>
+      <p class="helper-copy">${escapeHtml(displaySessionState(entry))}</p>
       <button class="button secondary" type="button" data-load-recording="${entry.id}">Open</button>
     `;
     elements.recentList.appendChild(item);
@@ -139,7 +283,13 @@ function renderRecording(recording) {
   elements.draftExplanation.textContent = recording.draft_explanation || "No explanation yet.";
   elements.confidenceBadge.textContent = `Confidence: ${recording.confidence || "low"}`;
   elements.statusBadge.textContent = recording.status === "approved" ? "Approved" : "Needs review";
-  elements.statusBadge.className = `pill ${recording.status === "approved" ? "" : "muted"}`;
+  elements.statusBadge.className = `pill ${recording.status === "approved" ? "success" : "muted"}`;
+
+  renderProcessing(
+    recording.processing_stage || (recording.status === "approved" ? "approved" : "done"),
+    recording.processing_message || "",
+    recording
+  );
 
   renderHitList(
     elements.glossaryHits,
@@ -171,11 +321,16 @@ async function loadBootstrap() {
   renderGlossary(payload.glossary || []);
   renderApprovedList(payload.approved_examples || []);
   renderRecentList(payload.recent_recordings || []);
+
+  if (!state.currentRecording) {
+    renderProcessing("idle");
+  }
 }
 
 async function loadRecording(recordingId) {
   const payload = await fetchJson(`/api/recordings/${recordingId}`);
   renderRecording(payload.recording);
+  setMessage(elements.captureMessage, payload.recording.processing_message || "Session loaded.");
 }
 
 async function uploadAudio() {
@@ -185,16 +340,47 @@ async function uploadAudio() {
   }
 
   elements.uploadButton.disabled = true;
-  setMessage(elements.captureMessage, "Uploading and transcribing...");
+  renderProcessing("uploading", `Uploading ${state.selectedFile.name}...`, null);
+  setMessage(elements.captureMessage, "Uploading audio...");
+
   const formData = new FormData();
   formData.append("file", state.selectedFile, state.selectedFile.name);
 
   try {
-    const payload = await fetchJson("/api/recordings", { method: "POST", body: formData });
-    renderRecording(payload.recording);
-    setMessage(elements.captureMessage, "Phonetic transcript ready for review.");
+    const created = await fetchJson("/api/recordings", { method: "POST", body: formData });
+    renderRecording(created.recording);
+
+    renderProcessing(
+      "transcribing",
+      `Transcribing with ${state.bootstrap?.app?.transcription_model || "the current model"}...`,
+      created.recording
+    );
+    setMessage(elements.captureMessage, "Transcribing audio...");
+    const transcribed = await fetchJson(`/api/recordings/${created.recording.id}/transcribe`, { method: "POST" });
+    renderRecording(transcribed.recording);
+
+    if (!transcribed.recording.raw_transcript?.trim()) {
+      setMessage(
+        elements.captureMessage,
+        transcribed.recording.processing_message || "Transcription finished with issues."
+      );
+      await loadBootstrap();
+      return;
+    }
+
+    renderProcessing("translating", "Drafting English translation...", transcribed.recording);
+    setMessage(elements.captureMessage, "Drafting translation...");
+    const drafted = await fetchJson(`/api/recordings/${created.recording.id}/draft-translation`, {
+      method: "POST",
+    });
+    renderRecording(drafted.recording);
+    setMessage(
+      elements.captureMessage,
+      drafted.recording.processing_message || "Phonetic transcript ready for review."
+    );
     await loadBootstrap();
   } catch (error) {
+    renderProcessing("error", error.message, state.currentRecording);
     setMessage(elements.captureMessage, error.message);
   } finally {
     elements.uploadButton.disabled = false;
@@ -207,6 +393,7 @@ async function refreshDraft() {
   }
 
   elements.refreshButton.disabled = true;
+  renderProcessing("translating", "Refreshing the English draft...", state.currentRecording);
   setMessage(elements.draftMessage, "Refreshing AI draft...");
   try {
     const payload = await fetchJson(`/api/recordings/${state.currentRecording.id}/refresh-draft`, {
@@ -216,8 +403,13 @@ async function refreshDraft() {
       }),
     });
     renderRecording(payload.recording);
-    setMessage(elements.draftMessage, "Draft updated.");
+    setMessage(
+      elements.draftMessage,
+      payload.recording.processing_message || "Draft translation ready for review."
+    );
+    await loadBootstrap();
   } catch (error) {
+    renderProcessing("error", error.message, state.currentRecording);
     setMessage(elements.draftMessage, error.message);
   } finally {
     elements.refreshButton.disabled = false;
@@ -230,6 +422,7 @@ async function approveRecording() {
   }
 
   elements.approveButton.disabled = true;
+  renderProcessing("done", "Saving approved version...", state.currentRecording);
   setMessage(elements.draftMessage, "Saving approved version...");
   try {
     const payload = await fetchJson(`/api/recordings/${state.currentRecording.id}/approve`, {
@@ -243,8 +436,12 @@ async function approveRecording() {
     });
     renderRecording(payload.recording);
     await loadBootstrap();
-    setMessage(elements.draftMessage, "Approved and added to project memory.");
+    setMessage(
+      elements.draftMessage,
+      payload.recording.processing_message || "Approved and added to project memory."
+    );
   } catch (error) {
+    renderProcessing("error", error.message, state.currentRecording);
     setMessage(elements.draftMessage, error.message);
   } finally {
     elements.approveButton.disabled = false;
@@ -298,15 +495,18 @@ async function toggleRecording() {
       state.selectedFile = new File([blob], `recording.${extension}`, { type: blob.type });
       elements.recordingState.textContent = "Recorded";
       elements.recordToggle.textContent = "Record again";
+      renderProcessing("idle", "Recording captured. Ready to upload and transcribe.", null);
       setMessage(elements.captureMessage, "Recording captured. Click Transcribe Audio to continue.");
       stream.getTracks().forEach((track) => track.stop());
     });
 
     state.mediaRecorder.start();
-    elements.recordingState.textContent = "Recording";
-    elements.recordToggle.textContent = "Stop recording";
+    elements.recordingState.textContent = "Listening";
+    elements.recordToggle.textContent = "Stop listening";
+    renderProcessing("listening", "Listening to the microphone...", null);
     setMessage(elements.captureMessage, "Recording in progress...");
   } catch (error) {
+    renderProcessing("error", "Microphone access was denied.", null);
     setMessage(elements.captureMessage, "Microphone access was denied.");
   }
 }
@@ -323,6 +523,7 @@ function escapeHtml(value) {
 elements.fileInput.addEventListener("change", (event) => {
   state.selectedFile = event.target.files?.[0] || null;
   if (state.selectedFile) {
+    renderProcessing("idle", `Selected ${state.selectedFile.name}. Ready to upload.`, null);
     setMessage(elements.captureMessage, `Ready to transcribe ${state.selectedFile.name}.`);
   }
 });
@@ -339,10 +540,12 @@ document.addEventListener("click", (event) => {
     return;
   }
   loadRecording(button.dataset.loadRecording).catch((error) => {
+    renderProcessing("error", error.message, state.currentRecording);
     setMessage(elements.captureMessage, error.message);
   });
 });
 
 loadBootstrap().catch((error) => {
+  renderProcessing("error", error.message, state.currentRecording);
   setMessage(elements.captureMessage, error.message);
 });

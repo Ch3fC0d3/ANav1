@@ -195,6 +195,7 @@ button {
 }
 
 .capture-box,
+.process-panel,
 .insight-card,
 .stack-list li,
 .example-list li,
@@ -208,11 +209,73 @@ button {
 .capture-actions,
 .inline-actions,
 .badge-row,
-.recorder-actions {
+.recorder-actions,
+.process-header,
+.progress-steps {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.process-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.process-header {
+  justify-content: space-between;
+  align-items: start;
+}
+
+.progress-steps {
+  gap: 1rem;
+}
+
+.progress-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.step-dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  border: 2px solid rgba(46, 31, 24, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.progress-step[data-state="active"] {
+  color: var(--accent);
+}
+
+.progress-step[data-state="active"] .step-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 6px rgba(12, 123, 109, 0.14);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.progress-step[data-state="complete"] {
+  color: var(--text);
+}
+
+.progress-step[data-state="complete"] .step-dot {
+  background: var(--clay);
+  border-color: var(--clay);
+}
+
+.progress-step[data-state="error"] {
+  color: var(--warning);
+}
+
+.progress-step[data-state="error"] .step-dot {
+  background: var(--warning);
+  border-color: var(--warning);
 }
 
 .button {
@@ -252,6 +315,21 @@ button {
 .recording-state {
   background: rgba(183, 97, 47, 0.12);
   color: var(--clay);
+}
+
+.pill.active {
+  background: rgba(12, 123, 109, 0.12);
+  color: var(--accent);
+}
+
+.pill.success {
+  background: rgba(50, 120, 64, 0.14);
+  color: #2f6a39;
+}
+
+.pill.error {
+  background: rgba(146, 83, 21, 0.12);
+  color: var(--warning);
 }
 
 input,
@@ -338,6 +416,16 @@ code {
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
   }
 }
 
