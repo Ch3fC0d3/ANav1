@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import mimetypes
 from pathlib import Path
 from uuid import uuid4
 
@@ -74,8 +75,12 @@ def serialize_recording(recording: dict | None) -> dict | None:
 
 
 def validate_upload(file: UploadFile, size_bytes: int) -> str:
-    extension = Path(file.filename or "").suffix.lower()
-    guessed_extension = ALLOWED_AUDIO_TYPES.get(file.content_type or "", extension)
+    return validate_audio_payload(file.filename or "", file.content_type or "", size_bytes)
+
+
+def validate_audio_payload(filename: str, mime_type: str, size_bytes: int) -> str:
+    extension = Path(filename).suffix.lower()
+    guessed_extension = ALLOWED_AUDIO_TYPES.get(mime_type, extension)
     if guessed_extension not in {".mp3", ".m4a", ".wav", ".webm", ".ogg"}:
         raise HTTPException(status_code=400, detail="Please upload MP3, M4A, WAV, WEBM, or OGG audio.")
     if size_bytes > settings.max_upload_mb * 1024 * 1024:
@@ -84,6 +89,26 @@ def validate_upload(file: UploadFile, size_bytes: int) -> str:
             detail=f"Audio is too large. Keep uploads under {settings.max_upload_mb} MB for this MVP.",
         )
     return guessed_extension
+
+
+def create_uploaded_recording(filename: str, mime_type: str, file_bytes: bytes) -> dict:
+    extension = validate_audio_payload(filename, mime_type, len(file_bytes))
+    recording_id = str(uuid4())
+    stored_path = settings.uploads_dir / f"{recording_id}{extension}"
+    with stored_path.open("wb") as output_file:
+        output_file.write(file_bytes)
+
+    return create_recording(
+        {
+            "id": recording_id,
+            "original_filename": filename or stored_path.name,
+            "audio_path": str(stored_path),
+            "mime_type": mime_type or "audio/mpeg",
+            "status": "needs_review",
+            "processing_stage": "uploaded",
+            "processing_message": "Audio uploaded. Ready to transcribe.",
+        }
+    )
 
 
 def build_recording_response(recording_id: str) -> dict:
@@ -108,6 +133,7 @@ async def index(request: Request):
 
 @app.get("/api/bootstrap")
 async def bootstrap():
+    sample_audio = settings.sample_audio_file
     return {
         "app": {
             "name": settings.app_name,
@@ -115,6 +141,8 @@ async def bootstrap():
             "transcription_model": settings.transcription_model,
             "translation_model": settings.translation_model,
             "max_upload_mb": settings.max_upload_mb,
+            "sample_audio_available": settings.sample_audio_available,
+            "sample_audio_name": sample_audio.name if settings.sample_audio_available and sample_audio else "",
         },
         "glossary": list_glossary(),
         "recent_recordings": [serialize_recording(item) for item in list_recent_recordings()],
@@ -138,24 +166,20 @@ async def recording_audio(recording_id: str):
 @app.post("/api/recordings")
 async def create_recording_endpoint(file: UploadFile = File(...)):
     file_bytes = await file.read()
-    extension = validate_upload(file, len(file_bytes))
+    validate_upload(file, len(file_bytes))
+    recording = create_uploaded_recording(file.filename or "", file.content_type or "audio/mpeg", file_bytes)
+    return {"recording": serialize_recording(recording)}
 
-    recording_id = str(uuid4())
-    stored_path = settings.uploads_dir / f"{recording_id}{extension}"
-    with stored_path.open("wb") as output_file:
-        output_file.write(file_bytes)
 
-    recording = create_recording(
-        {
-            "id": recording_id,
-            "original_filename": file.filename or stored_path.name,
-            "audio_path": str(stored_path),
-            "mime_type": file.content_type or "audio/mpeg",
-            "status": "needs_review",
-            "processing_stage": "uploaded",
-            "processing_message": "Audio uploaded. Ready to transcribe.",
-        }
-    )
+@app.post("/api/recordings/from-sample")
+async def create_recording_from_sample():
+    sample_path = settings.sample_audio_file
+    if not sample_path or not sample_path.exists() or not sample_path.is_file():
+        raise HTTPException(status_code=404, detail="Sample audio file is not available on this computer.")
+
+    mime_type = mimetypes.guess_type(sample_path.name)[0] or "audio/mpeg"
+    file_bytes = sample_path.read_bytes()
+    recording = create_uploaded_recording(sample_path.name, mime_type, file_bytes)
     return {"recording": serialize_recording(recording)}
 
 

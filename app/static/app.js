@@ -5,11 +5,19 @@ const state = {
   mediaRecorder: null,
   recordedChunks: [],
   processingStage: "idle",
+  audioStream: null,
+  audioContext: null,
+  analyser: null,
+  meterAnimationFrame: null,
+  timerInterval: null,
+  recordingStartedAt: null,
 };
 
 const elements = {
   fileInput: document.getElementById("audio-file"),
   uploadButton: document.getElementById("upload-button"),
+  sampleAudioButton: document.getElementById("sample-audio-button"),
+  sampleAudioLabel: document.getElementById("sample-audio-label"),
   captureMessage: document.getElementById("capture-message"),
   reviewPanel: document.getElementById("review-panel"),
   audioPlayer: document.getElementById("audio-player"),
@@ -36,6 +44,9 @@ const elements = {
   glossaryNotes: document.getElementById("glossary-notes"),
   recordToggle: document.getElementById("record-toggle"),
   recordingState: document.getElementById("recording-state"),
+  recordingTimer: document.getElementById("recording-timer"),
+  meterLabel: document.getElementById("meter-label"),
+  meterBars: Array.from(document.querySelectorAll("#mic-meter .meter-bar")),
   processTitle: document.getElementById("process-title"),
   processPill: document.getElementById("process-pill"),
   processMessage: document.getElementById("process-message"),
@@ -47,7 +58,7 @@ const PROCESS_SNAPSHOTS = {
     title: "Ready",
     pill: "Idle",
     pillClass: "pill muted",
-    message: "Pick a file or record audio to begin.",
+    message: "Pick a file, use the sample MP3, or record audio to begin.",
   },
   listening: {
     title: "Listening",
@@ -107,6 +118,122 @@ const PROCESS_SNAPSHOTS = {
 
 function setMessage(element, message) {
   element.textContent = message;
+}
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function resetMeter(label = "Mic level: waiting") {
+  elements.meterBars.forEach((bar, index) => {
+    bar.style.height = `${10 + (index % 3) * 2}px`;
+    bar.classList.remove("active", "hot");
+  });
+  elements.meterLabel.textContent = label;
+  if (!state.recordingStartedAt) {
+    elements.recordingTimer.textContent = "00:00";
+    elements.recordingTimer.className = "pill muted";
+  }
+}
+
+function setMeterLevel(level) {
+  const clamped = Math.max(0, Math.min(1, level));
+  elements.meterBars.forEach((bar, index) => {
+    const threshold = (index + 1) / elements.meterBars.length;
+    const intensity = Math.max(0, clamped - threshold + 0.18);
+    const height = 12 + Math.min(1, intensity * 2.4) * 42;
+    bar.style.height = `${height}px`;
+    bar.classList.toggle("active", intensity > 0.02);
+    bar.classList.toggle("hot", intensity > 0.36);
+  });
+
+  if (clamped < 0.05) {
+    elements.meterLabel.textContent = "Mic level: quiet";
+  } else if (clamped < 0.18) {
+    elements.meterLabel.textContent = "Mic level: low";
+  } else if (clamped < 0.45) {
+    elements.meterLabel.textContent = "Mic level: good";
+  } else {
+    elements.meterLabel.textContent = "Mic level: strong";
+  }
+}
+
+function stopRecordingTimer(keepValue = false) {
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+  }
+  if (!keepValue) {
+    state.recordingStartedAt = null;
+    elements.recordingTimer.textContent = "00:00";
+    elements.recordingTimer.className = "pill muted";
+  }
+}
+
+function startRecordingTimer() {
+  stopRecordingTimer();
+  state.recordingStartedAt = Date.now();
+  elements.recordingTimer.className = "pill active";
+  elements.recordingTimer.textContent = "00:00";
+  state.timerInterval = window.setInterval(() => {
+    if (!state.recordingStartedAt) {
+      return;
+    }
+    elements.recordingTimer.textContent = formatDuration(Date.now() - state.recordingStartedAt);
+  }, 250);
+}
+
+function stopMicMonitor(options = {}) {
+  const { keepTimerValue = false, meterLabel = "Mic level: waiting" } = options;
+
+  if (state.meterAnimationFrame) {
+    window.cancelAnimationFrame(state.meterAnimationFrame);
+    state.meterAnimationFrame = null;
+  }
+  if (state.audioContext) {
+    state.audioContext.close().catch(() => {});
+    state.audioContext = null;
+  }
+  state.analyser = null;
+  stopRecordingTimer(keepTimerValue);
+  resetMeter(meterLabel);
+}
+
+function animateMicMeter() {
+  if (!state.analyser) {
+    return;
+  }
+
+  const buffer = new Uint8Array(state.analyser.fftSize);
+  state.analyser.getByteTimeDomainData(buffer);
+
+  let sumSquares = 0;
+  for (let index = 0; index < buffer.length; index += 1) {
+    const normalized = (buffer[index] - 128) / 128;
+    sumSquares += normalized * normalized;
+  }
+  const rms = Math.sqrt(sumSquares / buffer.length);
+  setMeterLevel(Math.min(1, rms * 8));
+  state.meterAnimationFrame = window.requestAnimationFrame(animateMicMeter);
+}
+
+async function startMicMonitor(stream) {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    elements.meterLabel.textContent = "Mic level unavailable in this browser";
+    return;
+  }
+
+  state.audioContext = new AudioContextCtor();
+  state.analyser = state.audioContext.createAnalyser();
+  state.analyser.fftSize = 256;
+
+  const source = state.audioContext.createMediaStreamSource(stream);
+  source.connect(state.analyser);
+  animateMicMeter();
 }
 
 async function fetchJson(url, options = {}) {
@@ -271,6 +398,21 @@ function renderHitList(target, hits, emptyText, formatter) {
   });
 }
 
+function renderSampleControl(appConfig) {
+  const isAvailable = Boolean(appConfig?.sample_audio_available);
+  elements.sampleAudioButton.hidden = !isAvailable;
+  elements.sampleAudioLabel.hidden = !isAvailable;
+
+  if (!isAvailable) {
+    elements.sampleAudioLabel.textContent = "";
+    return;
+  }
+
+  const sampleName = appConfig.sample_audio_name || "sample MP3";
+  elements.sampleAudioButton.textContent = `Use ${sampleName}`;
+  elements.sampleAudioLabel.textContent = `Quick local test file: ${sampleName}`;
+}
+
 function renderRecording(recording) {
   state.currentRecording = recording;
   elements.reviewPanel.hidden = false;
@@ -321,6 +463,7 @@ async function loadBootstrap() {
   renderGlossary(payload.glossary || []);
   renderApprovedList(payload.approved_examples || []);
   renderRecentList(payload.recent_recordings || []);
+  renderSampleControl(payload.app || {});
 
   if (!state.currentRecording) {
     renderProcessing("idle");
@@ -333,13 +476,51 @@ async function loadRecording(recordingId) {
   setMessage(elements.captureMessage, payload.recording.processing_message || "Session loaded.");
 }
 
+function setCaptureButtonsBusy(isBusy) {
+  elements.uploadButton.disabled = isBusy;
+  if (!elements.sampleAudioButton.hidden) {
+    elements.sampleAudioButton.disabled = isBusy;
+  }
+  elements.fileInput.disabled = isBusy;
+}
+
+async function runProcessingPipeline(recording, sourceLabel) {
+  renderProcessing(
+    "transcribing",
+    `Transcribing ${sourceLabel} with ${state.bootstrap?.app?.transcription_model || "the current model"}...`,
+    recording
+  );
+  setMessage(elements.captureMessage, "Transcribing audio...");
+  const transcribed = await fetchJson(`/api/recordings/${recording.id}/transcribe`, { method: "POST" });
+  renderRecording(transcribed.recording);
+
+  if (!transcribed.recording.raw_transcript?.trim()) {
+    setMessage(
+      elements.captureMessage,
+      transcribed.recording.processing_message || "Transcription finished with issues."
+    );
+    await loadBootstrap();
+    return;
+  }
+
+  renderProcessing("translating", "Drafting English translation...", transcribed.recording);
+  setMessage(elements.captureMessage, "Drafting translation...");
+  const drafted = await fetchJson(`/api/recordings/${recording.id}/draft-translation`, { method: "POST" });
+  renderRecording(drafted.recording);
+  setMessage(
+    elements.captureMessage,
+    drafted.recording.processing_message || "Phonetic transcript ready for review."
+  );
+  await loadBootstrap();
+}
+
 async function uploadAudio() {
   if (!state.selectedFile) {
     setMessage(elements.captureMessage, "Choose or record an audio file first.");
     return;
   }
 
-  elements.uploadButton.disabled = true;
+  setCaptureButtonsBusy(true);
   renderProcessing("uploading", `Uploading ${state.selectedFile.name}...`, null);
   setMessage(elements.captureMessage, "Uploading audio...");
 
@@ -349,41 +530,36 @@ async function uploadAudio() {
   try {
     const created = await fetchJson("/api/recordings", { method: "POST", body: formData });
     renderRecording(created.recording);
-
-    renderProcessing(
-      "transcribing",
-      `Transcribing with ${state.bootstrap?.app?.transcription_model || "the current model"}...`,
-      created.recording
-    );
-    setMessage(elements.captureMessage, "Transcribing audio...");
-    const transcribed = await fetchJson(`/api/recordings/${created.recording.id}/transcribe`, { method: "POST" });
-    renderRecording(transcribed.recording);
-
-    if (!transcribed.recording.raw_transcript?.trim()) {
-      setMessage(
-        elements.captureMessage,
-        transcribed.recording.processing_message || "Transcription finished with issues."
-      );
-      await loadBootstrap();
-      return;
-    }
-
-    renderProcessing("translating", "Drafting English translation...", transcribed.recording);
-    setMessage(elements.captureMessage, "Drafting translation...");
-    const drafted = await fetchJson(`/api/recordings/${created.recording.id}/draft-translation`, {
-      method: "POST",
-    });
-    renderRecording(drafted.recording);
-    setMessage(
-      elements.captureMessage,
-      drafted.recording.processing_message || "Phonetic transcript ready for review."
-    );
-    await loadBootstrap();
+    await runProcessingPipeline(created.recording, state.selectedFile.name);
   } catch (error) {
     renderProcessing("error", error.message, state.currentRecording);
     setMessage(elements.captureMessage, error.message);
   } finally {
-    elements.uploadButton.disabled = false;
+    setCaptureButtonsBusy(false);
+  }
+}
+
+async function useSampleAudio() {
+  if (!state.bootstrap?.app?.sample_audio_available) {
+    setMessage(elements.captureMessage, "The sample MP3 is not available on this computer right now.");
+    return;
+  }
+
+  setCaptureButtonsBusy(true);
+  renderProcessing("uploading", "Loading the sample MP3 from this computer...", null);
+  setMessage(elements.captureMessage, "Loading sample audio...");
+
+  try {
+    const created = await fetchJson("/api/recordings/from-sample", { method: "POST" });
+    state.selectedFile = null;
+    elements.fileInput.value = "";
+    renderRecording(created.recording);
+    await runProcessingPipeline(created.recording, created.recording.original_filename || "sample MP3");
+  } catch (error) {
+    renderProcessing("error", error.message, state.currentRecording);
+    setMessage(elements.captureMessage, error.message);
+  } finally {
+    setCaptureButtonsBusy(false);
   }
 }
 
@@ -480,8 +656,11 @@ async function toggleRecording() {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    state.audioStream = stream;
     state.recordedChunks = [];
     state.mediaRecorder = new MediaRecorder(stream);
+    await startMicMonitor(stream);
+    startRecordingTimer();
 
     state.mediaRecorder.addEventListener("dataavailable", (event) => {
       if (event.data.size > 0) {
@@ -497,8 +676,14 @@ async function toggleRecording() {
       elements.recordToggle.textContent = "Record again";
       renderProcessing("idle", "Recording captured. Ready to upload and transcribe.", null);
       setMessage(elements.captureMessage, "Recording captured. Click Transcribe Audio to continue.");
-      stream.getTracks().forEach((track) => track.stop());
-    });
+      stopMicMonitor({ keepTimerValue: true, meterLabel: "Recording captured" });
+      elements.recordingTimer.className = "pill success";
+
+      if (state.audioStream) {
+        state.audioStream.getTracks().forEach((track) => track.stop());
+        state.audioStream = null;
+      }
+    }, { once: true });
 
     state.mediaRecorder.start();
     elements.recordingState.textContent = "Listening";
@@ -506,6 +691,11 @@ async function toggleRecording() {
     renderProcessing("listening", "Listening to the microphone...", null);
     setMessage(elements.captureMessage, "Recording in progress...");
   } catch (error) {
+    if (state.audioStream) {
+      state.audioStream.getTracks().forEach((track) => track.stop());
+      state.audioStream = null;
+    }
+    stopMicMonitor();
     renderProcessing("error", "Microphone access was denied.", null);
     setMessage(elements.captureMessage, "Microphone access was denied.");
   }
@@ -529,6 +719,7 @@ elements.fileInput.addEventListener("change", (event) => {
 });
 
 elements.uploadButton.addEventListener("click", uploadAudio);
+elements.sampleAudioButton.addEventListener("click", useSampleAudio);
 elements.refreshButton.addEventListener("click", refreshDraft);
 elements.approveButton.addEventListener("click", approveRecording);
 elements.glossaryForm.addEventListener("submit", addGlossaryEntry);
@@ -545,6 +736,7 @@ document.addEventListener("click", (event) => {
   });
 });
 
+resetMeter();
 loadBootstrap().catch((error) => {
   renderProcessing("error", error.message, state.currentRecording);
   setMessage(elements.captureMessage, error.message);

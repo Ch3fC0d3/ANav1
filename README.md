@@ -5,6 +5,7 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 ## What it does
 
 - Upload audio from phone or desktop
+- Load a local sample MP3 with one click when `SAMPLE_AUDIO_PATH` is configured
 - Record audio in the browser when supported
 - Transcribe speech into rough Navajo phonetic text with `gpt-4o-transcribe`
 - Draft an English meaning using:
@@ -52,6 +53,7 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 - `OPENAI_TRANSLATION_MODEL`: defaults to `gpt-4o-mini`
 - `OPENAI_TRANSCRIPTION_LANGUAGE`: optional; leave blank to let the model detect language
 - `MAX_UPLOAD_MB`: defaults to `25`
+- `SAMPLE_AUDIO_PATH`: optional absolute path for a one-click local sample file button
 
 ## Workflow
 

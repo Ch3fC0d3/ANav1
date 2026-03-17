@@ -13,7 +13,7 @@
           <p class="eyebrow">Human-guided Navajo translation memory</p>
           <h1>{{ app_name }}</h1>
           <p class="lede">
-            Capture speech, generate a rough Whisper transcript, draft an English meaning, then
+            Capture speech, generate a rough phonetic transcript, draft an English meaning, then
             approve the final version so the system learns your dialect and project vocabulary.
           </p>
         </div>
@@ -56,12 +56,36 @@
                 <label class="field-label" for="audio-file">Upload audio</label>
                 <input id="audio-file" type="file" accept="audio/*" capture />
                 <p class="helper-copy">Accepted: MP3, M4A, WAV, WEBM, OGG</p>
+                <div class="sample-row">
+                  <button id="sample-audio-button" class="button secondary" type="button" hidden>Use sample MP3</button>
+                  <p id="sample-audio-label" class="helper-copy" hidden></p>
+                </div>
               </div>
               <div class="capture-box">
                 <label class="field-label">Browser recorder</label>
                 <div class="recorder-actions">
                   <button id="record-toggle" class="button secondary" type="button">Start recording</button>
                   <span id="recording-state" class="recording-state">Idle</span>
+                </div>
+                <div class="meter-panel">
+                  <div id="mic-meter" class="mic-meter" aria-label="Microphone level meter">
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                  </div>
+                  <div class="meter-meta">
+                    <span id="meter-label" class="helper-copy">Mic level: waiting</span>
+                    <span id="recording-timer" class="pill muted">00:00</span>
+                  </div>
                 </div>
                 <p class="helper-copy">Works best in mobile browsers with microphone access enabled.</p>
               </div>
