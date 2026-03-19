@@ -23,6 +23,7 @@ class Settings:
     transcription_language: str = os.getenv("OPENAI_TRANSCRIPTION_LANGUAGE", "").strip()
     transcription_chunk_seconds: int = int(os.getenv("OPENAI_TRANSCRIPTION_CHUNK_SECONDS", "75"))
     sample_audio_path: str = os.getenv("SAMPLE_AUDIO_PATH", "").strip()
+    cors_allowed_origins_raw: str = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
 
     @property
     def openai_configured(self) -> bool:
@@ -52,6 +53,28 @@ class Settings:
                 "name, not a language. Leave it blank for auto-detect or set it to a real language name/code."
             )
         return ""
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        configured = [
+            value.strip()
+            for value in self.cors_allowed_origins_raw.split(",")
+            if value.strip()
+        ]
+        defaults = ["capacitor://localhost"]
+        merged = defaults + configured
+        seen: set[str] = set()
+        origins: list[str] = []
+        for value in merged:
+            if value in seen:
+                continue
+            seen.add(value)
+            origins.append(value)
+        return origins
+
+    @property
+    def cors_origin_regex(self) -> str:
+        return r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
     @property
     def sample_audio_file(self) -> Path | None:

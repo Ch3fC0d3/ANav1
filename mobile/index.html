@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ANav1 Mobile</title>
+    <link rel="icon" href="./static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">Human-guided Navajo translation memory</p>
+          <h1>ANav1 Mobile</h1>
+          <p class="lede">
+            Capture speech, generate a rough phonetic transcript, sketch plain-English meeting notes,
+            then approve the final version so the system learns your dialect and project vocabulary.
+          </p>
+        </div>
+        <div class="hero-status">
+          <div class="status-card">
+            <span class="status-label">OpenAI</span>
+            <strong class="status-off">
+              Server status loading...
+            </strong>
+            <p>
+              Connect this mobile shell to your ANav1 server. When the app loads, it will fetch the real server status automatically.
+            </p>
+          </div>
+          <div class="status-card muted">
+            <span class="status-label">Upload limit</span>
+            <strong>Server limit</strong>
+            <p>Best for interviews, field notes, and short review clips.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <section class="main-column">
+          <section class="panel capture-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 1</p>
+                <h2>Capture Speech</h2>
+              </div>
+              <p class="helper-copy">Record in-browser or upload from phone.</p>
+            </div>
+
+            <div class="capture-grid">
+              <div class="capture-box">
+                <label class="field-label" for="audio-file">Upload audio</label>
+                <input id="audio-file" type="file" accept="audio/*" capture />
+                <p class="helper-copy">Accepted: MP3, M4A, WAV, WEBM, OGG</p>
+                <div class="sample-row">
+                  <button id="sample-audio-button" class="button secondary" type="button" hidden>Use sample MP3</button>
+                  <p id="sample-audio-label" class="helper-copy" hidden></p>
+                </div>
+              </div>
+              <div class="capture-box">
+                <label class="field-label">Browser recorder</label>
+                <div class="recorder-actions">
+                  <button id="record-toggle" class="button secondary" type="button">Start recording</button>
+                  <span id="recording-state" class="recording-state">Idle</span>
+                </div>
+                <div class="meter-panel">
+                  <div id="mic-meter" class="mic-meter" aria-label="Microphone level meter">
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                    <span class="meter-bar"></span>
+                  </div>
+                  <div class="meter-meta">
+                    <span id="meter-label" class="helper-copy">Mic level: waiting</span>
+                    <span id="recording-timer" class="pill muted">00:00</span>
+                  </div>
+                </div>
+                <p class="helper-copy">Works best in mobile browsers with microphone access enabled.</p>
+              </div>
+            </div>
+
+            <div class="capture-box">
+              <label class="field-label" for="translation-context">Context for translation ideas</label>
+              <textarea
+                id="translation-context"
+                rows="4"
+                placeholder="Who is speaking, what the clip is about, project background, likely topics, place names, water rights, permits, family context, ceremony, etc."
+              ></textarea>
+              <p class="helper-copy">
+                This helps the system suggest possible meanings and ideas. It should not try to make an exact final translation.
+              </p>
+            </div>
+
+            <div class="capture-box waveform-panel">
+              <div class="waveform-header">
+                <span class="field-label">Audio preview</span>
+                <span id="waveform-source" class="helper-copy">No audio selected yet.</span>
+              </div>
+              <canvas id="audio-waveform" class="audio-waveform" width="960" height="160"></canvas>
+            </div>
+
+            <div class="capture-actions">
+              <button id="upload-button" class="button" type="button">Transcribe Audio</button>
+              <p id="capture-message" class="message"></p>
+            </div>
+
+            <div class="process-panel">
+              <div class="process-header">
+                <div>
+                  <p class="eyebrow">Live Status</p>
+                  <h3 id="process-title">Ready</h3>
+                </div>
+                <span id="process-pill" class="pill muted">Idle</span>
+              </div>
+              <p id="process-message" class="helper-copy">
+                Pick a file or record audio to begin.
+              </p>
+              <div class="progress-steps">
+                <div class="progress-step" data-step="upload">
+                  <span class="step-dot"></span>
+                  <span>Upload</span>
+                </div>
+                <div class="progress-step" data-step="transcribe">
+                  <span class="step-dot"></span>
+                  <span>Transcribe</span>
+                </div>
+                <div class="progress-step" data-step="translate">
+                  <span class="step-dot"></span>
+                  <span>Translate</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel review-panel" id="review-panel" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Steps 2-5</p>
+                <h2>Review And Approve</h2>
+              </div>
+              <div class="badge-row">
+                <span id="confidence-badge" class="pill">Confidence: low</span>
+                <span id="status-badge" class="pill muted">Needs review</span>
+              </div>
+            </div>
+
+            <audio id="audio-player" class="audio-player" controls></audio>
+
+            <div class="review-grid">
+              <div class="review-column">
+                <label class="field-label" for="raw-transcript">Rough phonetic transcript</label>
+                <textarea id="raw-transcript" rows="4" readonly></textarea>
+
+                <label class="field-label" for="corrected-transcript">Corrected Navajo text</label>
+                <textarea id="corrected-transcript" rows="8"></textarea>
+              </div>
+
+              <div class="review-column">
+                <div class="insight-card meeting-card">
+                  <div class="meeting-card-header">
+                    <div>
+                      <span class="field-label">Meeting understanding</span>
+                      <h3>Likely topics and notes</h3>
+                    </div>
+                    <p class="helper-copy">Plain-English notes from timed audio sections. Bigger-picture guesses are labeled.</p>
+                  </div>
+                  <p id="meeting-overall-takeaway" class="helper-copy">
+                    Meeting notes will appear here after transcription and drafting.
+                  </p>
+                  <ul id="meeting-summary-list" class="stack-list compact-list"></ul>
+                </div>
+
+                <div class="insight-card meeting-card">
+                  <div class="meeting-card-header">
+                    <div>
+                      <span class="field-label">Timeline view</span>
+                      <h3>Section-by-section notes</h3>
+                    </div>
+                    <p class="helper-copy">Use the timestamps to jump back into the audio and check any guesses.</p>
+                  </div>
+                  <ul id="meeting-gist-list" class="meeting-gist-list"></ul>
+                </div>
+
+                <label class="field-label" for="translation-text">Editable meeting notes / working English</label>
+                <textarea id="translation-text" rows="10"></textarea>
+
+                <label class="field-label" for="translation-notes">Notes for reviewers</label>
+                <textarea id="translation-notes" rows="3" placeholder="Context, speaker notes, uncertainties, place names..."></textarea>
+
+                <label class="field-label" for="topic-tags">Topic tags</label>
+                <input id="topic-tags" type="text" placeholder="water, land, permits" />
+              </div>
+            </div>
+
+            <div class="review-action-bar">
+              <p id="draft-message" class="message"></p>
+              <div class="review-action-buttons">
+                <button id="refresh-button" class="button secondary" type="button">Refresh Notes</button>
+                <button id="approve-button" class="button" type="button">Approve Final Version</button>
+              </div>
+            </div>
+
+            <div class="insight-grid">
+              <div class="insight-card">
+                <h3>AI explanation</h3>
+                <p id="draft-explanation" class="helper-copy"></p>
+                <ul id="warning-list" class="chip-list warning-list"></ul>
+              </div>
+              <div class="insight-card">
+                <h3>Glossary hits</h3>
+                <ul id="glossary-hit-list" class="chip-list"></ul>
+              </div>
+              <div class="insight-card">
+                <h3>Similar approved phrases</h3>
+                <ul id="example-hit-list" class="example-list"></ul>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Project Memory</p>
+                <h2>Glossary</h2>
+              </div>
+            </div>
+
+            <form id="glossary-form" class="glossary-form">
+              <input id="glossary-term" type="text" placeholder="Navajo term" required />
+              <input id="glossary-meaning" type="text" placeholder="English meaning" required />
+              <textarea id="glossary-notes" rows="2" placeholder="Notes or domain context"></textarea>
+              <button class="button secondary" type="submit">Add Glossary Entry</button>
+            </form>
+
+            <ul id="glossary-list" class="stack-list"></ul>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Learn</p>
+                <h2>Approved Memory</h2>
+              </div>
+            </div>
+            <ul id="approved-list" class="stack-list"></ul>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Recent Work</p>
+                <h2>Sessions</h2>
+              </div>
+              <button id="restore-recent-button" class="button ghost-button" type="button" hidden>Show Hidden</button>
+            </div>
+            <ul id="recent-list" class="stack-list"></ul>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="./runtime-config.js"></script>
+    <script src="./static/app.js" defer></script>
+  </body>
+</html>

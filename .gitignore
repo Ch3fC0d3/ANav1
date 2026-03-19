@@ -5,3 +5,9 @@ __pycache__/
 data/app.db
 data/uploads/*
 !data/uploads/.gitkeep
+node_modules/
+android/.gradle/
+android/local.properties
+android/app/build/
+ios/App/Pods/
+ios/App/build/

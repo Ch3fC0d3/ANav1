@@ -56,6 +56,7 @@ ANav1 is a lightweight human-in-the-loop Navajo translation workspace. It lets y
 - `OPENAI_TRANSCRIPTION_CHUNK_SECONDS`: defaults to `75`
 - `MAX_UPLOAD_MB`: defaults to `25`
 - `SAMPLE_AUDIO_PATH`: optional absolute path for a one-click local sample file button
+- `CORS_ALLOWED_ORIGINS`: optional comma-separated extra origins allowed to call the API; Capacitor localhost origins are already allowed by default
 
 ## Railway deploy
 
@@ -75,6 +76,76 @@ Optional Railway variables:
 - `MAX_UPLOAD_MB`
 
 Leave `SAMPLE_AUDIO_PATH` blank on Railway unless that file exists inside the deployed container.
+
+## Mobile app shell with Capacitor
+
+ANav1 now includes a Capacitor-ready mobile shell so the same interface can be wrapped for Android and iPhone while the FastAPI backend stays on Railway.
+
+What is included:
+
+- `package.json` with Capacitor 7 scripts
+- `capacitor.config.json`
+- `scripts/build_mobile_shell.py` to generate `mobile/` from the existing web UI
+- `mobile/runtime-config.js` for the API base URL
+- `/mobile-preview/` served by FastAPI so you can preview the native shell in a browser
+
+### 1. Point the mobile shell at your backend
+
+Edit `mobile/runtime-config.js` and set:
+
+```js
+window.ANAV1_CONFIG = {
+  apiBaseUrl: "https://your-railway-domain.up.railway.app",
+};
+```
+
+Leave it blank only if you are previewing through the same FastAPI server at `/mobile-preview/`.
+
+### 2. Install Capacitor dependencies
+
+This setup is pinned to Capacitor 7 because it works with Node 20.
+
+```powershell
+npm install
+```
+
+### 3. Rebuild the mobile web bundle after UI changes
+
+```powershell
+npm run mobile:build
+```
+
+### 4. Preview the mobile shell in the browser
+
+Start FastAPI, then open:
+
+```text
+http://127.0.0.1:5000/mobile-preview/
+```
+
+### 5. Add native platforms
+
+Android can be added from Windows:
+
+```powershell
+npm run cap:add:android
+npm run cap:sync
+npm run cap:open:android
+```
+
+iOS should be added on a Mac with Xcode installed:
+
+```powershell
+npm run cap:add:ios
+npm run cap:sync
+npm run cap:open:ios
+```
+
+### Notes
+
+- The mobile shell loads local app files and talks to your Railway API over HTTPS.
+- FastAPI now allows Capacitor localhost origins by default, plus any extra origins in `CORS_ALLOWED_ORIGINS`.
+- For App Store or Play Store release, you should add authentication before publishing so strangers cannot use your transcription endpoints.
 
 ## Workflow
 

@@ -1,0 +1,22 @@
+{
+  "name": "anav1-mobile-shell",
+  "private": true,
+  "scripts": {
+    "mobile:build": "python scripts/build_mobile_shell.py",
+    "cap:doctor": "npx cap doctor",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:copy": "npm run mobile:build && npx cap copy",
+    "cap:sync": "npm run mobile:build && npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "7.6.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "7.6.0",
+    "@capacitor/cli": "7.6.0",
+    "@capacitor/ios": "7.6.0"
+  }
+}
